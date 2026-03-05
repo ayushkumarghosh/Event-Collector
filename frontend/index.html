@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>India Event Collector</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>India Event Collector</h1>
+            <span id="last-updated" class="last-updated"></span>
+        </div>
+    </header>
+
+    <main>
+        <div class="controls">
+            <div class="filter-group">
+                <label>Category</label>
+                <div class="chips" id="category-chips">
+                    <button class="chip active" data-value="">All</button>
+                    <button class="chip" data-value="festivals">Festivals</button>
+                    <button class="chip" data-value="govt">Govt</button>
+                    <button class="chip" data-value="disaster">Disaster</button>
+                    <button class="chip" data-value="sports">Sports</button>
+                    <button class="chip" data-value="trends">Trends</button>
+                    <button class="chip" data-value="entertainment">Entertainment</button>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <label>Severity</label>
+                <div class="chips" id="severity-chips">
+                    <button class="chip active" data-value="">All</button>
+                    <button class="chip chip-critical" data-value="critical">Critical</button>
+                    <button class="chip chip-high" data-value="high">High</button>
+                    <button class="chip chip-normal" data-value="normal">Normal</button>
+                    <button class="chip chip-low" data-value="low">Low</button>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <label>Search</label>
+                <input type="text" id="search-input" placeholder="Search events...">
+            </div>
+        </div>
+
+        <div class="stats-bar" id="stats-bar"></div>
+
+        <div class="event-grid" id="event-grid">
+            <p class="loading">Loading events...</p>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

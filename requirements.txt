@@ -1,0 +1,10 @@
+httpx
+feedparser
+google-genai
+networkx
+sqlalchemy
+fastapi
+uvicorn[standard]
+apscheduler
+tenacity
+python-dotenv
