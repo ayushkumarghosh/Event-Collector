@@ -18,7 +18,6 @@ Edge types (stored as edge attr "relation"):
 Persistence: saved as GraphML to disk after every mutation batch.
 """
 
-import json
 import os
 import threading
 import uuid
@@ -47,6 +46,13 @@ def _make_entity_id(entity_type: str, name: str) -> str:
 
 def _make_category_id(category: str) -> str:
     return f"category::{category}"
+
+
+def _safe(value, default=""):
+    """Ensure a value is GraphML-safe (no None — GraphML cannot serialize NoneType)."""
+    if value is None:
+        return default
+    return value
 
 
 class KnowledgeGraph:
@@ -105,9 +111,9 @@ class KnowledgeGraph:
 
         if existing_id:
             # Update mutable fields
-            self.G.nodes[existing_id]["summary"] = event_dict.get("summary", self.G.nodes[existing_id].get("summary", ""))
-            self.G.nodes[existing_id]["severity"] = event_dict.get("severity", self.G.nodes[existing_id].get("severity", "normal"))
-            self.G.nodes[existing_id]["importance"] = float(event_dict.get("importance", self.G.nodes[existing_id].get("importance", 5)))
+            self.G.nodes[existing_id]["summary"] = _safe(event_dict.get("summary"), self.G.nodes[existing_id].get("summary", ""))
+            self.G.nodes[existing_id]["severity"] = _safe(event_dict.get("severity"), self.G.nodes[existing_id].get("severity", "normal"))
+            self.G.nodes[existing_id]["importance"] = float(_safe(event_dict.get("importance"), self.G.nodes[existing_id].get("importance", 5)))
             self.G.nodes[existing_id]["updated_at"] = _now_iso()
             return existing_id
 
@@ -116,29 +122,29 @@ class KnowledgeGraph:
         self.G.add_node(
             node_id,
             node_type="event",
-            name=event_dict.get("name", ""),
-            category=event_dict.get("category", ""),
-            subcategory=event_dict.get("subcategory", ""),
-            summary=event_dict.get("summary", ""),
-            location=event_dict.get("location", ""),
-            start_date=event_dict.get("start_date", ""),
-            end_date=event_dict.get("end_date", ""),
-            severity=event_dict.get("severity", "normal"),
-            importance=float(event_dict.get("importance", 5)),
-            source_url=event_dict.get("source_url", ""),
+            name=_safe(event_dict.get("name")),
+            category=_safe(event_dict.get("category")),
+            subcategory=_safe(event_dict.get("subcategory")),
+            summary=_safe(event_dict.get("summary")),
+            location=_safe(event_dict.get("location")),
+            start_date=_safe(event_dict.get("start_date")),
+            end_date=_safe(event_dict.get("end_date")),
+            severity=_safe(event_dict.get("severity"), "normal"),
+            importance=float(_safe(event_dict.get("importance"), 5)),
+            source_url=_safe(event_dict.get("source_url")),
             dedup_key=dedup_key,
             created_at=_now_iso(),
             updated_at=_now_iso(),
         )
 
         # Link to category
-        category = event_dict.get("category", "")
+        category = _safe(event_dict.get("category"))
         if category:
             cid = self._ensure_category(category)
             self.G.add_edge(node_id, cid, relation="belongs_to")
 
         # Link to location entity
-        location = event_dict.get("location", "")
+        location = _safe(event_dict.get("location"))
         if location:
             lid = self._ensure_entity("location", location)
             self.G.add_edge(node_id, lid, relation="located_in")
@@ -153,16 +159,16 @@ class KnowledgeGraph:
 
     def _link_temporal(self, node_id: str, event_dict: dict):
         """Link concurrent/sequential events based on date overlap."""
-        start = event_dict.get("start_date", "")
-        end = event_dict.get("end_date", "") or start
+        start = _safe(event_dict.get("start_date"))
+        end = _safe(event_dict.get("end_date")) or start
         if not start:
             return
 
         for nid, data in self.G.nodes(data=True):
             if data.get("node_type") != "event" or nid == node_id:
                 continue
-            other_start = data.get("start_date", "")
-            other_end = data.get("end_date", "") or other_start
+            other_start = _safe(data.get("start_date"))
+            other_end = _safe(data.get("end_date")) or other_start
             if not other_start:
                 continue
 
@@ -206,20 +212,19 @@ class KnowledgeGraph:
                 continue
             if severity and data.get("severity") != severity:
                 continue
-            if location and location.lower() not in data.get("location", "").lower():
+            if location and location.lower() not in _safe(data.get("location")).lower():
                 continue
             if q:
                 q_lower = q.lower()
-                if q_lower not in data.get("name", "").lower() and q_lower not in data.get("summary", "").lower():
+                if q_lower not in _safe(data.get("name")).lower() and q_lower not in _safe(data.get("summary")).lower():
                     continue
-            if from_date and data.get("start_date", "") and data.get("start_date", "") < from_date:
+            if from_date and _safe(data.get("start_date")) and _safe(data.get("start_date")) < from_date:
                 continue
 
             events.append({"id": nid, **data})
 
         # Sort by importance desc, then created_at desc
-        events.sort(key=lambda e: (-float(e.get("importance", 5)), e.get("created_at", "")), reverse=False)
-        events.sort(key=lambda e: -float(e.get("importance", 5)))
+        events.sort(key=lambda e: (-float(_safe(e.get("importance"), 5)), e.get("created_at", "")))
 
         return events[offset : offset + limit]
 
@@ -321,8 +326,8 @@ class KnowledgeGraph:
         for nid, data in self.G.nodes(data=True):
             if data.get("node_type") != "event":
                 continue
-            ev_start = data.get("start_date", "")
-            ev_end = data.get("end_date", "") or ev_start
+            ev_start = _safe(data.get("start_date"))
+            ev_end = _safe(data.get("end_date")) or ev_start
             if not ev_start:
                 continue
             if ev_start <= end and ev_end >= start:
@@ -340,7 +345,7 @@ class KnowledgeGraph:
         for _, data in self.G.nodes(data=True):
             if data.get("node_type") != "event" or data.get("category") != category:
                 continue
-            existing = _normalize(data.get("name", ""))
+            existing = _normalize(_safe(data.get("name")))
             if SequenceMatcher(None, norm_name, existing).ratio() >= threshold:
                 return True
             count += 1
