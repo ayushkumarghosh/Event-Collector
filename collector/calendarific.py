@@ -5,15 +5,14 @@ from config import CALENDARIFIC_API_KEY
 
 API_URL = "https://calendarific.com/api/v2/holidays"
 
-# Map Calendarific holiday types to our categories
+# Map Calendarific holiday types to our new categories
 TYPE_TO_CATEGORY = {
-    "national": "festivals",
-    "religious": "festivals",
-    "observance": "festivals",
-    "local": "festivals",
+    "national": "holiday",
+    "religious": "religion",
+    "observance": "holiday",
+    "local": "festival",
 }
 
-# Map Calendarific types to severity
 TYPE_TO_SEVERITY = {
     "national": "high",
     "religious": "normal",
@@ -22,11 +21,18 @@ TYPE_TO_SEVERITY = {
 }
 
 
+def _classify_holiday(h_types: list[str]) -> str:
+    """Determine category from Calendarific type list."""
+    for t in h_types:
+        if t in TYPE_TO_CATEGORY:
+            return TYPE_TO_CATEGORY[t]
+    return "holiday"
+
+
 def fetch_calendarific_holidays() -> list[dict]:
     """
     Fetch Indian holidays and festivals from Calendarific API.
-    Returns list of article-like dicts compatible with the extractor pipeline,
-    but with pre-extracted event fields in 'extracted' key so they can bypass LLM.
+    Returns list of article-like dicts with pre-extracted event fields.
     """
     if not CALENDARIFIC_API_KEY:
         print("  [WARN] CALENDARIFIC_API_KEY not set, skipping holidays fetch")
@@ -64,7 +70,9 @@ def fetch_calendarific_holidays() -> list[dict]:
             date_iso = h.get("date", {}).get("iso", "")
             h_types = h.get("type", [])
 
-            # Pick most important type for severity mapping
+            category = _classify_holiday(h_types)
+
+            # Pick severity
             severity = "normal"
             for t in h_types:
                 if t in TYPE_TO_SEVERITY:
@@ -75,25 +83,26 @@ def fetch_calendarific_holidays() -> list[dict]:
                     elif s == "normal" and severity != "high":
                         severity = "normal"
 
+            url = f"https://calendarific.com/holiday/india/{name.lower().replace(' ', '-')}-{year}"
+
             articles.append({
                 "source_name": "Calendarific",
-                "url": f"https://calendarific.com/holiday/india/{name.lower().replace(' ', '-')}-{year}",
+                "url": url,
                 "title": name,
                 "content": f"{name}: {description}" if description else name,
-                "content_hash": None,  # Computed by fetcher
-                "category": "festivals",
-                # Pre-extracted fields — these skip LLM processing
+                "content_hash": None,
+                "category": category,
                 "extracted": {
                     "name": name,
-                    "category": "festivals",
+                    "category": category,
                     "subcategory": ", ".join(h_types),
-                    "summary": description or f"{name} — Indian holiday/festival.",
+                    "summary": description or f"{name} — Indian {category}.",
                     "location": "India",
                     "start_date": date_iso[:10] if date_iso else None,
                     "end_date": None,
                     "severity": severity,
                     "importance": 8 if severity == "high" else 5,
-                    "source_url": f"https://calendarific.com/holiday/india/{name.lower().replace(' ', '-')}-{year}",
+                    "source_url": url,
                 },
             })
 

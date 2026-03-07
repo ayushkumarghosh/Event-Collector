@@ -1,6 +1,8 @@
 import httpx
 
-EVENTBRITE_SEARCH_URL = "https://www.eventbrite.com/api/v3/destination/search/"
+from config import EVENTBRITE_API_TOKEN
+
+EVENTBRITE_API_URL = "https://www.eventbriteapi.com/v3/destination/search/"
 
 # Major Indian cities to search for events
 INDIA_CITIES = [
@@ -8,40 +10,47 @@ INDIA_CITIES = [
     "Kolkata", "Pune", "Jaipur", "Ahmedabad", "Goa",
 ]
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-    "Referer": "https://www.eventbrite.com/",
-}
-
 
 def fetch_eventbrite_events() -> list[dict]:
     """
-    Fetch upcoming events from Eventbrite's destination search for Indian cities.
+    Fetch upcoming events from Eventbrite destination search API for Indian cities.
     Returns list of article-like dicts compatible with the extractor.
     """
+    if not EVENTBRITE_API_TOKEN:
+        print("  [WARN] EVENTBRITE_API_TOKEN not set, skipping Eventbrite")
+        return []
+
+    headers = {
+        "Authorization": f"Bearer {EVENTBRITE_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
     articles = []
     seen_ids = set()
 
     for city in INDIA_CITIES:
         try:
-            resp = httpx.get(
-                EVENTBRITE_SEARCH_URL,
-                params={
-                    "dates": "current_future",
-                    "dedup": "1",
-                    "page_size": "10",
-                    "place": f"{city}, India",
+            resp = httpx.post(
+                EVENTBRITE_API_URL,
+                json={
+                    "event_search": {
+                        "q": city,
+                        "dates": "current_future",
+                        "page_size": 10,
+                    }
                 },
-                headers=HEADERS,
+                headers=headers,
                 timeout=15,
                 follow_redirects=True,
             )
+            if resp.status_code == 401:
+                print("  [WARN] Eventbrite auth failed (401). Check EVENTBRITE_API_TOKEN.")
+                return articles
             if resp.status_code != 200:
                 continue
 
             data = resp.json()
-            events = data.get("events", data.get("results", []))
+            events = data.get("events", {}).get("results", [])
             if not events:
                 continue
 
@@ -51,15 +60,21 @@ def fetch_eventbrite_events() -> list[dict]:
                     continue
                 seen_ids.add(event_id)
 
-                name = ev.get("name", "").strip()
+                name = (ev.get("name") or "").strip()
                 if not name:
                     continue
 
-                summary = ev.get("summary", "") or ev.get("description", "") or ""
+                summary = ev.get("summary", "") or ""
                 url = ev.get("url", "") or f"https://www.eventbrite.com/e/{event_id}"
-                start = ev.get("start_date", "") or ""
-                venue = ev.get("primary_venue", {}) or {}
-                location = venue.get("address", {}).get("city", city) if venue else city
+                start_date = ev.get("start_date", "") or ""
+                end_date = ev.get("end_date", "") or ""
+
+                # Extract city from locations array
+                location = city
+                for loc in ev.get("locations", []):
+                    if loc.get("type") == "locality":
+                        location = loc.get("name", city)
+                        break
 
                 content = f"{name}. {summary}".strip()[:3000]
 
@@ -69,9 +84,10 @@ def fetch_eventbrite_events() -> list[dict]:
                     "title": name,
                     "content": content,
                     "content_hash": None,  # Computed by fetcher
-                    "category": "entertainment",
+                    "category": "situation",
                     "extra": {
-                        "start_date": start,
+                        "start_date": start_date,
+                        "end_date": end_date,
                         "location": location,
                     },
                 })

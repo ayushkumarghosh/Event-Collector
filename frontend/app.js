@@ -3,26 +3,54 @@ const API_BASE = "/api/v1";
 let activeCategory = "";
 let activeSeverity = "";
 let searchQuery = "";
+let activeView = "cards";
+let calendarYear, calendarMonth;
 let debounceTimer = null;
 
 // --- Init ---
 document.addEventListener("DOMContentLoaded", () => {
-    setupChips("category-chips", (val) => { activeCategory = val; loadEvents(); });
-    setupChips("severity-chips", (val) => { activeSeverity = val; loadEvents(); });
+    const now = new Date();
+    calendarYear = now.getFullYear();
+    calendarMonth = now.getMonth();
+
+    setupChips("category-chips", (val) => { activeCategory = val; refresh(); });
+    setupChips("severity-chips", (val) => { activeSeverity = val; refresh(); });
+    setupChips("view-chips", (val) => {
+        activeView = val;
+        document.getElementById("event-grid").style.display = val === "cards" ? "" : "none";
+        document.getElementById("calendar-container").style.display = val === "calendar" ? "" : "none";
+        refresh();
+    });
+
+    document.getElementById("cal-prev").addEventListener("click", () => {
+        calendarMonth--;
+        if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
+        loadCalendar();
+    });
+    document.getElementById("cal-next").addEventListener("click", () => {
+        calendarMonth++;
+        if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
+        loadCalendar();
+    });
 
     const searchInput = document.getElementById("search-input");
     searchInput.addEventListener("input", () => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
             searchQuery = searchInput.value.trim();
-            loadEvents();
+            refresh();
         }, 300);
     });
 
-    loadEvents();
+    refresh();
     loadStats();
     setInterval(loadStats, 5 * 60 * 1000);
 });
+
+function refresh() {
+    if (activeView === "cards") loadEvents();
+    else loadCalendar();
+}
 
 // --- Chip setup ---
 function setupChips(containerId, onChange) {
@@ -36,7 +64,7 @@ function setupChips(containerId, onChange) {
     });
 }
 
-// --- Load events ---
+// --- Load events (card view) ---
 async function loadEvents() {
     const params = new URLSearchParams();
     if (activeCategory) params.set("category", activeCategory);
@@ -54,7 +82,7 @@ async function loadEvents() {
     }
 }
 
-// --- Load related events for a card ---
+// --- Load related events ---
 async function loadRelated(eventId) {
     const panel = document.getElementById(`related-${CSS.escape(eventId)}`);
     if (!panel) return;
@@ -75,7 +103,7 @@ async function loadRelated(eventId) {
             return;
         }
         panel.innerHTML = related.map(ev =>
-            `<a class="related-link" href="#" onclick="event.preventDefault(); loadEvents()">${escapeHtml(ev.name)} <span class="meta-tag category">${ev.category}</span></a>`
+            `<a class="related-link" href="#" onclick="event.preventDefault()">${escapeHtml(ev.name)} <span class="meta-tag category">${ev.category}</span></a>`
         ).join("");
     } catch {
         panel.innerHTML = `<span class="related-empty">Failed to load</span>`;
@@ -96,7 +124,7 @@ function renderCards(events) {
         const locationStr = ev.location || "";
         const metaParts = [];
 
-        metaParts.push(`<span class="meta-tag category">${ev.category}</span>`);
+        metaParts.push(`<span class="meta-tag category cat-${ev.category}">${ev.category}</span>`);
         metaParts.push(`<span class="meta-tag severity severity-${ev.severity}">${ev.severity}</span>`);
         if (ev.subcategory) metaParts.push(`<span class="meta-tag">${ev.subcategory}</span>`);
         if (locationStr) metaParts.push(`<span class="meta-tag">${locationStr}</span>`);
@@ -123,6 +151,87 @@ function renderCards(events) {
             <div class="related-panel" id="related-${escapedId}" style="display:none"></div>
         </div>`;
     }).join("");
+}
+
+// --- Calendar view ---
+async function loadCalendar() {
+    const label = document.getElementById("cal-month-label");
+    const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    label.textContent = `${monthNames[calendarMonth]} ${calendarYear}`;
+
+    // Get first/last day of month for timeline query
+    const startDate = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-01`;
+    const lastDay = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const endDate = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+    let events = [];
+    try {
+        const params = new URLSearchParams({ start: startDate, end: endDate });
+        const resp = await fetch(`${API_BASE}/timeline?${params}`);
+        events = await resp.json();
+    } catch {
+        events = [];
+    }
+
+    // Filter by active category/severity
+    if (activeCategory) events = events.filter(e => e.category === activeCategory);
+    if (activeSeverity) events = events.filter(e => e.severity === activeSeverity);
+    if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        events = events.filter(e =>
+            (e.name || "").toLowerCase().includes(q) || (e.summary || "").toLowerCase().includes(q)
+        );
+    }
+
+    // Group events by day
+    const eventsByDay = {};
+    for (const ev of events) {
+        const sd = ev.start_date || "";
+        if (!sd) continue;
+        const day = parseInt(sd.substring(8, 10), 10);
+        if (!eventsByDay[day]) eventsByDay[day] = [];
+        eventsByDay[day].push(ev);
+    }
+
+    renderCalendar(lastDay, eventsByDay);
+}
+
+function renderCalendar(daysInMonth, eventsByDay) {
+    const grid = document.getElementById("calendar-grid");
+    const firstDow = new Date(calendarYear, calendarMonth, 1).getDay();
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    let html = dayNames.map(d => `<div class="cal-header">${d}</div>`).join("");
+
+    // Empty cells before first day
+    for (let i = 0; i < firstDow; i++) {
+        html += `<div class="cal-cell empty"></div>`;
+    }
+
+    const today = new Date();
+    const isCurrentMonth = today.getFullYear() === calendarYear && today.getMonth() === calendarMonth;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dayEvents = eventsByDay[day] || [];
+        const isToday = isCurrentMonth && today.getDate() === day;
+        const hasEvents = dayEvents.length > 0;
+
+        let cellClass = "cal-cell";
+        if (isToday) cellClass += " today";
+        if (hasEvents) cellClass += " has-events";
+
+        let eventsHtml = "";
+        for (const ev of dayEvents.slice(0, 3)) {
+            eventsHtml += `<div class="cal-event cat-${ev.category} severity-${ev.severity}" title="${escapeHtml(ev.summary || ev.name)}">${escapeHtml(ev.name)}</div>`;
+        }
+        if (dayEvents.length > 3) {
+            eventsHtml += `<div class="cal-more">+${dayEvents.length - 3} more</div>`;
+        }
+
+        html += `<div class="${cellClass}"><span class="cal-day-num">${day}</span>${eventsHtml}</div>`;
+    }
+
+    grid.innerHTML = html;
 }
 
 // --- Load stats ---

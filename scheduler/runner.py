@@ -3,7 +3,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from config import COLLECTION_INTERVAL_MINUTES, DISASTER_INTERVAL_MINUTES
 from storage.database import init_db
 from storage.graph import init_graph
-from scheduler.jobs import full_pipeline_job, disaster_fast_job
+from scheduler.jobs import full_pipeline_job, situation_fast_job
 
 
 def start_scheduler():
@@ -26,13 +26,13 @@ def start_scheduler():
     )
 
     scheduler.add_job(
-        disaster_fast_job,
+        situation_fast_job,
         "interval",
         minutes=DISASTER_INTERVAL_MINUTES,
         max_instances=1,
         misfire_grace_time=120,
-        id="disaster_fast",
+        id="situation_fast",
     )
 
-    print(f"Scheduler started: full every {COLLECTION_INTERVAL_MINUTES}m, disaster every {DISASTER_INTERVAL_MINUTES}m")
+    print(f"Scheduler started: full every {COLLECTION_INTERVAL_MINUTES}m, situation every {DISASTER_INTERVAL_MINUTES}m")
     scheduler.start()

@@ -17,15 +17,22 @@
     <main>
         <div class="controls">
             <div class="filter-group">
+                <label>View</label>
+                <div class="chips" id="view-chips">
+                    <button class="chip active" data-value="cards">Cards</button>
+                    <button class="chip" data-value="calendar">Calendar</button>
+                </div>
+            </div>
+
+            <div class="filter-group">
                 <label>Category</label>
                 <div class="chips" id="category-chips">
                     <button class="chip active" data-value="">All</button>
-                    <button class="chip" data-value="festivals">Festivals</button>
-                    <button class="chip" data-value="govt">Govt</button>
-                    <button class="chip" data-value="disaster">Disaster</button>
-                    <button class="chip" data-value="sports">Sports</button>
-                    <button class="chip" data-value="trends">Trends</button>
-                    <button class="chip" data-value="entertainment">Entertainment</button>
+                    <button class="chip" data-value="religion">Religion</button>
+                    <button class="chip" data-value="state">State</button>
+                    <button class="chip" data-value="holiday">Holiday</button>
+                    <button class="chip" data-value="festival">Festival</button>
+                    <button class="chip" data-value="situation">Situation</button>
                 </div>
             </div>
 
@@ -48,8 +55,19 @@
 
         <div class="stats-bar" id="stats-bar"></div>
 
+        <!-- Cards view -->
         <div class="event-grid" id="event-grid">
             <p class="loading">Loading events...</p>
+        </div>
+
+        <!-- Calendar view -->
+        <div class="calendar-container" id="calendar-container" style="display:none">
+            <div class="calendar-nav">
+                <button class="cal-nav-btn" id="cal-prev">&larr;</button>
+                <span class="cal-month-label" id="cal-month-label"></span>
+                <button class="cal-nav-btn" id="cal-next">&rarr;</button>
+            </div>
+            <div class="calendar-grid" id="calendar-grid"></div>
         </div>
     </main>
 

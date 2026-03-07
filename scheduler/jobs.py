@@ -6,6 +6,6 @@ def full_pipeline_job():
     run_pipeline(category_filter=None)
 
 
-def disaster_fast_job():
-    print("[Scheduler] Running disaster fast-path...")
-    run_pipeline(category_filter="disaster")
+def situation_fast_job():
+    print("[Scheduler] Running situation fast-path...")
+    run_pipeline(category_filter="situation")

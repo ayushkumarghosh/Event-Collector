@@ -74,7 +74,7 @@ class KnowledgeGraph:
         else:
             self.G = nx.DiGraph()
             # Seed category nodes
-            for cat in ["festivals", "govt", "disaster", "sports", "trends", "entertainment"]:
+            for cat in ["religion", "state", "holiday", "festival", "situation"]:
                 cid = _make_category_id(cat)
                 self.G.add_node(cid, node_type="category", name=cat)
 

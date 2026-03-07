@@ -1,6 +1,6 @@
 # India Event Collector
 
-An automated pipeline that continuously monitors and aggregates upcoming events, festivals, government actions, disasters, sports, trends, and entertainment across India. It pulls data from curated RSS feeds, Google Trends, Eventbrite, and Calendarific, then uses Google Gemini (LLM) to extract structured event data. Events are deduplicated and stored in a local knowledge graph (NetworkX) with temporal indexing and entity relationships. A FastAPI backend serves the data through REST endpoints, while a vanilla JS dashboard lets users browse, filter, and search events.
+An automated pipeline that continuously monitors and aggregates events across India — religious occasions, government actions, national holidays, festivals, and ongoing situations (disasters, sports, entertainment, trends). It pulls data from curated RSS feeds, Google Trends, Eventbrite, and Calendarific, then uses Google Gemini (LLM) to extract structured event data. Events are deduplicated and stored in a local knowledge graph (NetworkX) with temporal indexing and entity relationships. A FastAPI backend serves the data through REST endpoints, while a vanilla JS dashboard provides both card and calendar views with filtering and search.
 
 ---
 
@@ -65,7 +65,8 @@ CALENDARIFIC_API_KEY=your-calendarific-api-key-here
 | `LLM_MODEL` | No | Gemini model to use (default: `gemini-2.0-flash`) |
 | `LLM_BATCH_SIZE` | No | Articles per Gemini API call (default: `5`) |
 | `COLLECTION_INTERVAL_MINUTES` | No | Full pipeline run interval (default: `60`) |
-| `DISASTER_INTERVAL_MINUTES` | No | Disaster-only pipeline interval (default: `15`) |
+| `DISASTER_INTERVAL_MINUTES` | No | Situation-only pipeline interval (default: `15`) |
+| `EVENTBRITE_API_TOKEN` | No | Eventbrite private token for event search |
 
 ---
 
@@ -80,8 +81,8 @@ python run_collector.py once
 Filter by category:
 
 ```bash
-python run_collector.py once --category disaster
-python run_collector.py once --category sports
+python run_collector.py once --category situation
+python run_collector.py once --category state
 ```
 
 ### Option B: Continuous scheduler
@@ -92,7 +93,7 @@ python run_collector.py schedule
 
 This runs the full pipeline immediately, then:
 - Full pipeline every 60 minutes (all sources)
-- Disaster-only pipeline every 15 minutes
+- Situation-only pipeline every 15 minutes
 
 ### Option C: API server + dashboard
 
@@ -117,24 +118,33 @@ python run_collector.py schedule
 
 ---
 
+## Dashboard
+
+The dashboard provides two views:
+
+- **Cards view** — Event cards sorted by importance, with severity color coding, category tags, source links, and related event discovery
+- **Calendar view** — Monthly calendar grid showing events on their dates, color-coded by category
+
+Both views support filtering by category, severity, and text search.
+
+---
+
 ## Data Sources
 
 ### RSS Feeds (28 sources)
 
-**Government** (5)
+**State** (5)
 - The Hindu National — https://www.thehindu.com/news/national/feeder/default.rss
 - Indian Express India — https://indianexpress.com/section/india/feed/
 - News18 India — https://www.news18.com/rss/india.xml
 - Tribune India — https://publish.tribuneindia.com/newscategory/nation/feed/
 - India TV News India — https://www.indiatvnews.com/rssnews/topstory-india.xml
 
-**Disaster** (4)
+**Situation** (23)
 - NDTV India — https://feeds.feedburner.com/ndtvnews-india-news
 - The Hindu — https://www.thehindu.com/feeder/default.rss
 - News18 India — https://www.news18.com/rss/india.xml
 - India TV News Top — https://www.indiatvnews.com/rssnews/topstory.xml
-
-**Sports / Business** (9)
 - ESPNcricinfo India — https://www.espncricinfo.com/rss/content/story/feeds/0.xml
 - Economic Times — https://economictimes.indiatimes.com/rssfeedstopstories.cms
 - News18 Sports — https://www.news18.com/rss/sports.xml
@@ -144,14 +154,10 @@ python run_collector.py schedule
 - Livemint Sports — https://www.livemint.com/rss/sports
 - Tribune Sports — https://publish.tribuneindia.com/newscategory/sports/feed/
 - India TV Sports — https://www.indiatvnews.com/rssnews/topstory-sports.xml
-
-**Trends** (4)
 - India Today Trending — https://www.indiatoday.in/rss/home
 - NDTV India Trends — https://feeds.feedburner.com/ndtvnews-india-news
 - HT India Trends — https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml
 - India TV Trending — https://www.indiatvnews.com/rssnews/topstory-trending.xml
-
-**Entertainment** (6)
 - Bollywood Hungama — https://www.bollywoodhungama.com/feed/
 - News18 Entertainment — https://www.news18.com/rss/entertainment.xml
 - Indian Express Entertainment — https://indianexpress.com/section/entertainment/feed/
@@ -180,7 +186,7 @@ RSS Feeds / APIs
       │ (Calendarific)  │ (RSS, Trends, Eventbrite)
       ▼                ▼
  Skip Gemini      extractor.py ── Batch 5 articles → Gemini → JSON
-      │                │
+      │                │           (prints token counts per batch)
       └───────┬────────┘
               ▼
        deduplicator.py ── SHA-256 dedup key + fuzzy matching
@@ -190,7 +196,7 @@ RSS Feeds / APIs
               │        Events, Entities, Temporal Relations
               │        Persisted as knowledge_graph.graphml
               ▼
-        FastAPI ──── REST API → Dashboard
+        FastAPI ──── REST API → Dashboard (Cards + Calendar)
 ```
 
 ### Storage
@@ -220,7 +226,7 @@ Entities (locations, organizations) are auto-created from event data and linked 
 | GET | `/api/v1/events` | List events (filter by category, severity, location, search, date) |
 | GET | `/api/v1/events/{id}` | Event detail with relations |
 | GET | `/api/v1/events/{id}/related` | Related events via graph edges |
-| GET | `/api/v1/timeline?start=...&end=...` | Events in a date range |
+| GET | `/api/v1/timeline?start=...&end=...` | Events in a date range (used by calendar view) |
 | GET | `/api/v1/entities` | All entities with event counts |
 | GET | `/api/v1/entities/{type}/{name}/events` | Events linked to an entity |
 | GET | `/api/v1/stats` | Graph-wide statistics |
@@ -229,7 +235,7 @@ Entities (locations, organizations) are auto-created from event data and linked 
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `category` | string | Filter: `festivals`, `govt`, `disaster`, `sports`, `trends`, `entertainment` |
+| `category` | string | Filter: `religion`, `state`, `holiday`, `festival`, `situation` |
 | `severity` | string | Filter: `critical`, `high`, `normal`, `low` |
 | `location` | string | Partial match on location |
 | `q` | string | Search in event name and summary |
@@ -267,9 +273,9 @@ india-event-collector/
 │   ├── jobs.py             # APScheduler job definitions
 │   └── runner.py           # Scheduler entrypoint
 ├── frontend/
-│   ├── index.html          # Dashboard shell
-│   ├── app.js              # Vanilla JS: fetch, render, filter, search
-│   └── style.css           # Card layout, severity colors
+│   ├── index.html          # Dashboard shell (cards + calendar views)
+│   ├── app.js              # Vanilla JS: fetch, render, filter, search, calendar
+│   └── style.css           # Card layout, calendar grid, severity/category colors
 ├── config.py               # Environment config loader
 ├── run_collector.py        # CLI entrypoint
 ├── requirements.txt
@@ -283,12 +289,11 @@ india-event-collector/
 
 | Category | Description | Severity examples |
 |----------|-------------|-------------------|
-| `festivals` | Holi, Diwali, Eid, regional festivals, melas | High |
-| `govt` | Elections, budget, policy, parliament, court rulings | High |
-| `disaster` | Cyclones, floods, earthquakes, accidents | Critical |
-| `sports` | Cricket, IPL, Olympics, kabaddi, market events | Normal–High |
-| `trends` | Viral topics, protests, social movements | Normal |
-| `entertainment` | Movies, OTT releases, concerts, celebrity events | Low–Normal |
+| `religion` | Religious events, prayers, pilgrimages, temple/mosque/church events, spiritual gatherings | Normal–High |
+| `state` | Government actions, elections, budget, policy, parliament, court rulings | High |
+| `holiday` | National holidays (Republic Day, Independence Day, Gandhi Jayanti), bank holidays | Normal |
+| `festival` | Holi, Diwali, Eid, Navratri, Pongal, Onam, Christmas, regional festivals, melas | High |
+| `situation` | Ongoing/upcoming situations — disasters, protests, sports, entertainment, business/market events, trending topics | Low–Critical |
 
 ---
 
@@ -296,5 +301,6 @@ india-event-collector/
 
 - **Model**: `gemini-2.0-flash` (free tier: 1,500 requests/day)
 - **Batch size**: 5 articles per API call
+- **Token counting**: Input and output token counts are printed per batch during processing
 - **Rate limiting**: 4 second delay between batches, exponential backoff on 429 errors
 - **Typical run**: ~200 articles → ~40 API calls → well within free tier
