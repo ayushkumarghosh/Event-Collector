@@ -5,28 +5,70 @@ from config import CALENDARIFIC_API_KEY
 
 API_URL = "https://calendarific.com/api/v2/holidays"
 
-# Map Calendarific holiday types to our new categories
-TYPE_TO_CATEGORY = {
-    "national": "holiday",
-    "religious": "religion",
-    "observance": "holiday",
-    "local": "festival",
+# Religious tradition type strings returned by Calendarific
+RELIGIOUS_TYPES = {
+    "hinduism", "islam", "sikhism", "christianity", "buddhism",
+    "jainism", "jewish", "zoroastrianism", "christian",
 }
 
-TYPE_TO_SEVERITY = {
-    "national": "high",
-    "religious": "normal",
-    "observance": "low",
-    "local": "low",
+# Major public celebrations — classified as "festival" regardless of religion
+# These are widely celebrated across India, not just private observances
+FESTIVAL_NAMES = {
+    # Hindu festivals
+    "holi", "diwali", "deepavali", "diwali/deepavali", "dussehra", "navratri",
+    "pongal", "onam", "makar sankranti", "ganesh chaturthi", "raksha bandhan",
+    "janmashtami", "rama navami", "ugadi", "gudi padwa", "vishu", "baisakhi",
+    "lohri", "bihu", "chhath puja", "maha shivaratri", "vasant panchami",
+    "rath yatra", "karaka chaturthi", "bhai duj",
+    # Islamic festivals
+    "eid", "eid ul-fitr", "eid ul-adha", "eid al-fitr", "eid al-adha",
+    "ramzan id", "bakrid", "muharram", "milad un-nabi", "eid-e-milad",
+    # Christian festivals
+    "christmas", "easter", "good friday",
+    # Sikh festivals
+    "guru nanak jayanti", "guru gobind singh jayanti",
+    # Buddhist/Jain festivals
+    "buddha purnima", "mahavir jayanti",
+}
+
+# Purely religious observances — prayer days, fasting starts, not public celebrations
+RELIGION_NAMES = {
+    "maundy thursday", "ramadan start", "first day of passover",
+    "first day of hanukkah", "last day of hanukkah",
+    "first day of sharad navratri", "first day of durga puja festivities",
+    "chhat puja (pratihar sashthi/surya sashthi)",
 }
 
 
-def _classify_holiday(h_types: list[str]) -> str:
-    """Determine category from Calendarific type list."""
-    for t in h_types:
-        if t in TYPE_TO_CATEGORY:
-            return TYPE_TO_CATEGORY[t]
-    return "holiday"
+def _classify_holiday(name: str, h_types: list[str]) -> tuple[str, str]:
+    """Determine (category, severity) from Calendarific type list and name."""
+    types_lower = [t.lower() for t in h_types]
+    name_lower = name.lower().strip()
+
+    # Explicit religion observances (prayer/fasting start days, not celebrations)
+    if name_lower in RELIGION_NAMES:
+        return "religion", "normal"
+
+    # Known festival names — public celebrations regardless of religion of origin
+    is_festival = name_lower in FESTIVAL_NAMES or any(
+        name_lower.startswith(f) for f in FESTIVAL_NAMES
+    )
+    if is_festival:
+        return "festival", "high"
+
+    # Has a religious tradition type → religion observance
+    if any(t in RELIGIOUS_TYPES for t in types_lower):
+        return "religion", "normal"
+
+    # National holiday (non-religious, e.g. Republic Day, Independence Day, Gandhi Jayanti)
+    if any("national" in t for t in types_lower):
+        return "holiday", "high"
+
+    # Observance / Season
+    if any("observance" in t or "season" in t for t in types_lower):
+        return "holiday", "low"
+
+    return "holiday", "normal"
 
 
 def fetch_calendarific_holidays() -> list[dict]:
@@ -40,6 +82,7 @@ def fetch_calendarific_holidays() -> list[dict]:
 
     year = datetime.now().year
     articles = []
+    seen_names = set()
 
     for holiday_type in ("national", "religious", "observance"):
         try:
@@ -66,22 +109,17 @@ def fetch_calendarific_holidays() -> list[dict]:
             if not name:
                 continue
 
+            # Skip duplicates across types (e.g. Holi appears in both national and religious)
+            name_key = name.lower()
+            if name_key in seen_names:
+                continue
+            seen_names.add(name_key)
+
             description = h.get("description", "") or ""
             date_iso = h.get("date", {}).get("iso", "")
             h_types = h.get("type", [])
 
-            category = _classify_holiday(h_types)
-
-            # Pick severity
-            severity = "normal"
-            for t in h_types:
-                if t in TYPE_TO_SEVERITY:
-                    s = TYPE_TO_SEVERITY[t]
-                    if s == "high":
-                        severity = "high"
-                        break
-                    elif s == "normal" and severity != "high":
-                        severity = "normal"
+            category, severity = _classify_holiday(name, h_types)
 
             url = f"https://calendarific.com/holiday/india/{name.lower().replace(' ', '-')}-{year}"
 

@@ -78,6 +78,12 @@ def get_timeline(
     return [_event_to_out(e) for e in events]
 
 
+@router.get("/locations", response_model=list[str])
+def list_locations():
+    graph = get_graph()
+    return graph.get_locations()
+
+
 @router.get("/entities", response_model=list[EntityOut])
 def list_entities(entity_type: str | None = Query(None)):
     graph = get_graph()

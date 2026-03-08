@@ -27,8 +27,8 @@ def _upsert_events(graph, events: list[dict | None], raw_ids: list[int]) -> tupl
         dedup_key = make_dedup_key(name, start_date, category)
         event["dedup_key"] = dedup_key
 
-        # Fuzzy dedup for undated events
-        if not start_date and graph.fuzzy_duplicate_exists(name, category):
+        # Fuzzy dedup: skip if a similar event already exists (same category, similar name + same date)
+        if graph.fuzzy_duplicate_exists(name, category, start_date):
             skipped_count += 1
             continue
 

@@ -2,6 +2,7 @@ const API_BASE = "/api/v1";
 
 let activeCategory = "";
 let activeSeverity = "";
+let activeLocation = "";
 let searchQuery = "";
 let activeView = "cards";
 let calendarYear, calendarMonth;
@@ -33,6 +34,12 @@ document.addEventListener("DOMContentLoaded", () => {
         loadCalendar();
     });
 
+    const locationSelect = document.getElementById("location-select");
+    locationSelect.addEventListener("change", () => {
+        activeLocation = locationSelect.value;
+        refresh();
+    });
+
     const searchInput = document.getElementById("search-input");
     searchInput.addEventListener("input", () => {
         clearTimeout(debounceTimer);
@@ -42,6 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 300);
     });
 
+    loadLocations();
     refresh();
     loadStats();
     setInterval(loadStats, 5 * 60 * 1000);
@@ -64,11 +72,27 @@ function setupChips(containerId, onChange) {
     });
 }
 
+// --- Load locations for dropdown ---
+async function loadLocations() {
+    try {
+        const resp = await fetch(`${API_BASE}/locations`);
+        const locations = await resp.json();
+        const select = document.getElementById("location-select");
+        for (const loc of locations) {
+            const opt = document.createElement("option");
+            opt.value = loc;
+            opt.textContent = loc;
+            select.appendChild(opt);
+        }
+    } catch { /* silently fail */ }
+}
+
 // --- Load events (card view) ---
 async function loadEvents() {
     const params = new URLSearchParams();
     if (activeCategory) params.set("category", activeCategory);
     if (activeSeverity) params.set("severity", activeSeverity);
+    if (activeLocation) params.set("location", activeLocation);
     if (searchQuery) params.set("q", searchQuery);
     params.set("limit", "100");
 
@@ -173,9 +197,10 @@ async function loadCalendar() {
         events = [];
     }
 
-    // Filter by active category/severity
+    // Filter by active category/severity/location
     if (activeCategory) events = events.filter(e => e.category === activeCategory);
     if (activeSeverity) events = events.filter(e => e.severity === activeSeverity);
+    if (activeLocation) events = events.filter(e => (e.location || "").includes(activeLocation));
     if (searchQuery) {
         const q = searchQuery.toLowerCase();
         events = events.filter(e =>

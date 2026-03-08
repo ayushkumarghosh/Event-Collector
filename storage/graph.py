@@ -338,13 +338,24 @@ class KnowledgeGraph:
         events.sort(key=lambda e: e.get("start_date", ""))
         return events
 
-    def fuzzy_duplicate_exists(self, name: str, category: str, threshold: float = 0.85) -> bool:
-        """Check if an undated event is a fuzzy duplicate of a recent event."""
+    def fuzzy_duplicate_exists(self, name: str, category: str, start_date: str | None = None, threshold: float = 0.85) -> bool:
+        """Check if a similar event already exists in the graph.
+        For dated events, also requires the same date to match.
+        For undated events, matches on name similarity + category only."""
         norm_name = _normalize(name)
+        date_key = (start_date or "")[:10]
         count = 0
         for _, data in self.G.nodes(data=True):
-            if data.get("node_type") != "event" or data.get("category") != category:
+            if data.get("node_type") != "event":
                 continue
+            # Category must match
+            if data.get("category") != category:
+                continue
+            # If the new event has a date, existing event must share the same date
+            if date_key:
+                existing_date = (_safe(data.get("start_date")) or "")[:10]
+                if existing_date != date_key:
+                    continue
             existing = _normalize(_safe(data.get("name")))
             if SequenceMatcher(None, norm_name, existing).ratio() >= threshold:
                 return True
@@ -352,6 +363,18 @@ class KnowledgeGraph:
             if count >= 500:
                 break
         return False
+
+    def get_locations(self) -> list[str]:
+        """Get all unique non-empty location values from events, sorted by frequency."""
+        loc_counts: dict[str, int] = {}
+        for _, data in self.G.nodes(data=True):
+            if data.get("node_type") != "event":
+                continue
+            loc = _safe(data.get("location")).strip()
+            if loc and loc.lower() != "india":
+                loc_counts[loc] = loc_counts.get(loc, 0) + 1
+        # Sort by count descending
+        return [loc for loc, _ in sorted(loc_counts.items(), key=lambda x: -x[1])]
 
     def get_entities(self, entity_type: str | None = None) -> list[dict]:
         """List all entities, optionally filtered by type."""
