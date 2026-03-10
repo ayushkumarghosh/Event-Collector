@@ -49,6 +49,14 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 300);
     });
 
+    // Close day modal when clicking outside
+    const dayModal = document.getElementById("day-modal");
+    dayModal.addEventListener("click", (e) => {
+        if (e.target === dayModal) {
+            closeDayModal();
+        }
+    });
+
     loadLocations();
     refresh();
     loadStats();
@@ -126,9 +134,12 @@ async function loadRelated(eventId) {
             panel.innerHTML = `<span class="related-empty">No related events</span>`;
             return;
         }
-        panel.innerHTML = related.map(ev =>
-            `<a class="related-link" href="#" onclick="event.preventDefault()">${escapeHtml(ev.name)} <span class="meta-tag category">${ev.category}</span></a>`
-        ).join("");
+        panel.innerHTML = related.map(ev => {
+            const catTags = (ev.categories || []).map(c =>
+                `<span class="meta-tag category cat-${c}">${c}</span>`
+            ).join("");
+            return `<a class="related-link" href="#" onclick="event.preventDefault()">${escapeHtml(ev.name)} ${catTags}</a>`;
+        }).join("");
     } catch {
         panel.innerHTML = `<span class="related-empty">Failed to load</span>`;
     }
@@ -146,9 +157,13 @@ function renderCards(events) {
     grid.innerHTML = events.map(ev => {
         const dateStr = ev.start_date ? formatDate(ev.start_date) : "";
         const locationStr = ev.location || "";
+        const cats = ev.categories || [];
         const metaParts = [];
 
-        metaParts.push(`<span class="meta-tag category cat-${ev.category}">${ev.category}</span>`);
+        // Render all category tags
+        for (const cat of cats) {
+            metaParts.push(`<span class="meta-tag category cat-${cat}">${cat}</span>`);
+        }
         metaParts.push(`<span class="meta-tag severity severity-${ev.severity}">${ev.severity}</span>`);
         if (ev.subcategory) metaParts.push(`<span class="meta-tag">${ev.subcategory}</span>`);
         if (locationStr) metaParts.push(`<span class="meta-tag">${locationStr}</span>`);
@@ -159,6 +174,9 @@ function renderCards(events) {
             : "";
 
         const escapedId = escapeAttr(ev.id);
+
+        // Use first category for the card border color
+        const primaryCat = cats[0] || "situation";
 
         return `
         <div class="event-card severity-${ev.severity}">
@@ -198,7 +216,7 @@ async function loadCalendar() {
     }
 
     // Filter by active category/severity/location
-    if (activeCategory) events = events.filter(e => e.category === activeCategory);
+    if (activeCategory) events = events.filter(e => (e.categories || []).includes(activeCategory));
     if (activeSeverity) events = events.filter(e => e.severity === activeSeverity);
     if (activeLocation) events = events.filter(e => (e.location || "").includes(activeLocation));
     if (searchQuery) {
@@ -221,10 +239,16 @@ async function loadCalendar() {
     renderCalendar(lastDay, eventsByDay);
 }
 
+// Store calendar events globally so we can access them from click handlers
+let calendarEventsByDay = {};
+
 function renderCalendar(daysInMonth, eventsByDay) {
     const grid = document.getElementById("calendar-grid");
     const firstDow = new Date(calendarYear, calendarMonth, 1).getDay();
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    // Store events globally for access in click handlers
+    calendarEventsByDay = eventsByDay;
 
     let html = dayNames.map(d => `<div class="cal-header">${d}</div>`).join("");
 
@@ -243,20 +267,68 @@ function renderCalendar(daysInMonth, eventsByDay) {
 
         let cellClass = "cal-cell";
         if (isToday) cellClass += " today";
-        if (hasEvents) cellClass += " has-events";
+        if (hasEvents) cellClass += " has-events clickable";
 
         let eventsHtml = "";
         for (const ev of dayEvents.slice(0, 3)) {
-            eventsHtml += `<div class="cal-event cat-${ev.category} severity-${ev.severity}" title="${escapeHtml(ev.summary || ev.name)}">${escapeHtml(ev.name)}</div>`;
+            const primaryCat = (ev.categories || [])[0] || "situation";
+            eventsHtml += `<div class="cal-event cat-${primaryCat} severity-${ev.severity}" title="${escapeHtml(ev.summary || ev.name)}">${escapeHtml(ev.name)}</div>`;
         }
         if (dayEvents.length > 3) {
             eventsHtml += `<div class="cal-more">+${dayEvents.length - 3} more</div>`;
         }
 
-        html += `<div class="${cellClass}"><span class="cal-day-num">${day}</span>${eventsHtml}</div>`;
+        const clickHandler = hasEvents ? `onclick="expandDay(${day})"` : "";
+        html += `<div class="${cellClass}" ${clickHandler}><span class="cal-day-num">${day}</span>${eventsHtml}</div>`;
     }
 
     grid.innerHTML = html;
+}
+
+function expandDay(day) {
+    const events = calendarEventsByDay[day] || [];
+    if (events.length === 0) return;
+
+    const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const dateStr = `${monthNames[calendarMonth]} ${day}, ${calendarYear}`;
+
+    const modal = document.getElementById("day-modal");
+    document.getElementById("day-modal-title").textContent = dateStr;
+
+    const eventsContainer = document.getElementById("day-modal-events");
+    eventsContainer.innerHTML = events.map(ev => {
+        const cats = ev.categories || [];
+        const catTags = cats.map(c =>
+            `<span class="meta-tag category cat-${c}">${c}</span>`
+        ).join("");
+        const sourceLink = ev.source_url
+            ? `<a class="source-link" href="${escapeHtml(ev.source_url)}" target="_blank" rel="noopener">Source</a>`
+            : "";
+
+        return `
+        <div class="day-event-card severity-${ev.severity}">
+            <div class="day-event-header">
+                <h4>${escapeHtml(ev.name)}</h4>
+                <span class="importance-badge">${Math.round(ev.importance)}</span>
+            </div>
+            ${ev.summary ? `<p class="day-event-summary">${escapeHtml(ev.summary)}</p>` : ""}
+            <div class="day-event-meta">
+                ${catTags}
+                <span class="meta-tag severity severity-${ev.severity}">${ev.severity}</span>
+                ${ev.subcategory ? `<span class="meta-tag">${ev.subcategory}</span>` : ""}
+                ${ev.location ? `<span class="meta-tag">${ev.location}</span>` : ""}
+            </div>
+            <div class="day-event-actions">
+                ${sourceLink}
+            </div>
+        </div>`;
+    }).join("");
+
+    modal.style.display = "flex";
+}
+
+function closeDayModal() {
+    document.getElementById("day-modal").style.display = "none";
 }
 
 // --- Load stats ---

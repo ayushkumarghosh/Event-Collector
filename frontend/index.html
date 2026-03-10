@@ -76,6 +76,17 @@
             </div>
             <div class="calendar-grid" id="calendar-grid"></div>
         </div>
+
+        <!-- Day modal for expanded view -->
+        <div class="day-modal" id="day-modal" style="display:none">
+            <div class="day-modal-content">
+                <div class="day-modal-header">
+                    <h3 id="day-modal-title"></h3>
+                    <button class="day-modal-close" onclick="closeDayModal()">&times;</button>
+                </div>
+                <div class="day-modal-events" id="day-modal-events"></div>
+            </div>
+        </div>
     </main>
 
     <script src="app.js"></script>

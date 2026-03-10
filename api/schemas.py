@@ -4,7 +4,7 @@ from pydantic import BaseModel
 class EventOut(BaseModel):
     id: str
     name: str
-    category: str
+    categories: list[str] = []
     subcategory: str | None = None
     summary: str | None = None
     location: str | None = None

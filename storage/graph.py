@@ -2,7 +2,7 @@
 Knowledge Graph + Temporal Event Store built on NetworkX.
 
 Node types:
-  - event:    {node_type, name, category, subcategory, summary, severity, importance,
+  - event:    {node_type, name, categories, subcategory, summary, severity, importance,
                start_date, end_date, source_url, dedup_key, created_at, updated_at}
   - entity:   {node_type, entity_type, name}          (location, person, org, topic)
   - category: {node_type, name}
@@ -31,6 +31,8 @@ _lock = threading.Lock()
 
 GRAPH_PATH = os.getenv("GRAPH_PATH", "knowledge_graph.graphml")
 
+ALL_CATEGORIES = ["religion", "state", "holiday", "festival", "situation"]
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -55,6 +57,18 @@ def _safe(value, default=""):
     return value
 
 
+def _cats_to_str(categories: list[str]) -> str:
+    """Convert categories list to comma-separated string for GraphML storage."""
+    return ",".join(sorted(categories))
+
+
+def _str_to_cats(s: str) -> list[str]:
+    """Convert stored comma-separated string back to categories list."""
+    if not s:
+        return []
+    return [c.strip() for c in s.split(",") if c.strip()]
+
+
 class KnowledgeGraph:
     def __init__(self, path: str | None = None):
         self.path = Path(path or GRAPH_PATH)
@@ -74,7 +88,7 @@ class KnowledgeGraph:
         else:
             self.G = nx.DiGraph()
             # Seed category nodes
-            for cat in ["religion", "state", "holiday", "festival", "situation"]:
+            for cat in ALL_CATEGORIES:
                 cid = _make_category_id(cat)
                 self.G.add_node(cid, node_type="category", name=cat)
 
@@ -109,11 +123,15 @@ class KnowledgeGraph:
         dedup_key = event_dict["dedup_key"]
         existing_id = self.get_event_by_dedup_key(dedup_key)
 
+        categories = event_dict.get("categories", [])
+        cats_str = _cats_to_str(categories)
+
         if existing_id:
             # Update mutable fields
             self.G.nodes[existing_id]["summary"] = _safe(event_dict.get("summary"), self.G.nodes[existing_id].get("summary", ""))
             self.G.nodes[existing_id]["severity"] = _safe(event_dict.get("severity"), self.G.nodes[existing_id].get("severity", "normal"))
             self.G.nodes[existing_id]["importance"] = float(_safe(event_dict.get("importance"), self.G.nodes[existing_id].get("importance", 5)))
+            self.G.nodes[existing_id]["categories"] = cats_str
             self.G.nodes[existing_id]["updated_at"] = _now_iso()
             return existing_id
 
@@ -123,7 +141,7 @@ class KnowledgeGraph:
             node_id,
             node_type="event",
             name=_safe(event_dict.get("name")),
-            category=_safe(event_dict.get("category")),
+            categories=cats_str,
             subcategory=_safe(event_dict.get("subcategory")),
             summary=_safe(event_dict.get("summary")),
             location=_safe(event_dict.get("location")),
@@ -137,10 +155,9 @@ class KnowledgeGraph:
             updated_at=_now_iso(),
         )
 
-        # Link to category
-        category = _safe(event_dict.get("category"))
-        if category:
-            cid = self._ensure_category(category)
+        # Link to all categories
+        for cat in categories:
+            cid = self._ensure_category(cat)
             self.G.add_edge(node_id, cid, relation="belongs_to")
 
         # Link to location entity
@@ -194,6 +211,10 @@ class KnowledgeGraph:
 
     # --- Queries ---
 
+    def _event_categories(self, data: dict) -> list[str]:
+        """Get categories list from event node data."""
+        return _str_to_cats(data.get("categories", ""))
+
     def get_events(
         self,
         category: str | None = None,
@@ -208,7 +229,7 @@ class KnowledgeGraph:
         for nid, data in self.G.nodes(data=True):
             if data.get("node_type") != "event":
                 continue
-            if category and data.get("category") != category:
+            if category and category not in self._event_categories(data):
                 continue
             if severity and data.get("severity") != severity:
                 continue
@@ -221,7 +242,10 @@ class KnowledgeGraph:
             if from_date and _safe(data.get("start_date")) and _safe(data.get("start_date")) < from_date:
                 continue
 
-            events.append({"id": nid, **data})
+            ev = {"id": nid, **data}
+            # Return categories as list for the API
+            ev["categories"] = self._event_categories(data)
+            events.append(ev)
 
         # Sort by importance desc, then created_at desc
         events.sort(key=lambda e: (-float(_safe(e.get("importance"), 5)), e.get("created_at", "")))
@@ -233,6 +257,7 @@ class KnowledgeGraph:
             return None
         data = dict(self.G.nodes[event_id])
         data["id"] = event_id
+        data["categories"] = self._event_categories(data)
 
         # Gather relations
         relations = []
@@ -269,8 +294,8 @@ class KnowledgeGraph:
             nt = data.get("node_type")
             if nt == "event":
                 total_events += 1
-                cat = data.get("category", "unknown")
-                by_category[cat] = by_category.get(cat, 0) + 1
+                for cat in self._event_categories(data):
+                    by_category[cat] = by_category.get(cat, 0) + 1
                 sev = data.get("severity", "normal")
                 by_severity[sev] = by_severity.get(sev, 0) + 1
             elif nt == "entity":
@@ -290,11 +315,9 @@ class KnowledgeGraph:
             return []
 
         related_ids = set()
-        # Outgoing edges to other events
         for _, target, data in self.G.out_edges(event_id, data=True):
             if self.G.nodes[target].get("node_type") == "event":
                 related_ids.add(target)
-        # Incoming edges from other events
         for source, _, data in self.G.in_edges(event_id, data=True):
             if self.G.nodes[source].get("node_type") == "event":
                 related_ids.add(source)
@@ -303,6 +326,7 @@ class KnowledgeGraph:
         for rid in list(related_ids)[:limit]:
             d = dict(self.G.nodes[rid])
             d["id"] = rid
+            d["categories"] = self._event_categories(d)
             results.append(d)
         return results
 
@@ -317,6 +341,7 @@ class KnowledgeGraph:
             if self.G.nodes[source].get("node_type") == "event":
                 d = dict(self.G.nodes[source])
                 d["id"] = source
+                d["categories"] = self._event_categories(d)
                 events.append(d)
         return events
 
@@ -333,23 +358,25 @@ class KnowledgeGraph:
             if ev_start <= end and ev_end >= start:
                 d = dict(data)
                 d["id"] = nid
+                d["categories"] = self._event_categories(d)
                 events.append(d)
 
         events.sort(key=lambda e: e.get("start_date", ""))
         return events
 
-    def fuzzy_duplicate_exists(self, name: str, category: str, start_date: str | None = None, threshold: float = 0.85) -> bool:
+    def fuzzy_duplicate_exists(self, name: str, categories: list[str], start_date: str | None = None, threshold: float = 0.85) -> bool:
         """Check if a similar event already exists in the graph.
-        For dated events, also requires the same date to match.
-        For undated events, matches on name similarity + category only."""
+        Requires at least one overlapping category, similar name, and same date (if dated)."""
         norm_name = _normalize(name)
         date_key = (start_date or "")[:10]
+        cats_set = set(categories)
         count = 0
         for _, data in self.G.nodes(data=True):
             if data.get("node_type") != "event":
                 continue
-            # Category must match
-            if data.get("category") != category:
+            # Must share at least one category
+            existing_cats = set(self._event_categories(data))
+            if not cats_set & existing_cats:
                 continue
             # If the new event has a date, existing event must share the same date
             if date_key:
@@ -373,7 +400,6 @@ class KnowledgeGraph:
             loc = _safe(data.get("location")).strip()
             if loc and loc.lower() != "india":
                 loc_counts[loc] = loc_counts.get(loc, 0) + 1
-        # Sort by count descending
         return [loc for loc, _ in sorted(loc_counts.items(), key=lambda x: -x[1])]
 
     def get_entities(self, entity_type: str | None = None) -> list[dict]:
@@ -384,7 +410,6 @@ class KnowledgeGraph:
                 continue
             if entity_type and data.get("entity_type") != entity_type:
                 continue
-            # Count connected events
             event_count = sum(
                 1 for source, _, _ in self.G.in_edges(nid, data=True)
                 if self.G.nodes[source].get("node_type") == "event"

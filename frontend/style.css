@@ -451,6 +451,140 @@ main {
     padding: 0.1rem;
 }
 
+.cal-cell.clickable {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.cal-cell.clickable:hover {
+    background: #f5f5f5;
+}
+
+/* ===== Day Modal ===== */
+.day-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.day-modal-content {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    max-width: 600px;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 0;
+    width: 90%;
+}
+
+.day-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid #eee;
+    background: #f9fafb;
+}
+
+.day-modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #1a1a2e;
+}
+
+.day-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #888;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s;
+}
+
+.day-modal-close:hover {
+    color: #1a1a2e;
+}
+
+.day-modal-events {
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.day-event-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 1rem;
+    border-left: 4px solid #0d6efd;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.day-event-card.severity-critical { border-left-color: #dc3545; }
+.day-event-card.severity-high { border-left-color: #fd7e14; }
+.day-event-card.severity-normal { border-left-color: #0d6efd; }
+.day-event-card.severity-low { border-left-color: #198754; }
+
+.day-event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.day-event-header h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.day-event-summary {
+    font-size: 0.85rem;
+    color: #555;
+    margin: 0;
+}
+
+.day-event-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.day-event-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.day-event-actions .source-link {
+    font-size: 0.75rem;
+    color: #0d6efd;
+    text-decoration: none;
+}
+
+.day-event-actions .source-link:hover {
+    text-decoration: underline;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     .controls {

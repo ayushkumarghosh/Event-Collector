@@ -10,7 +10,7 @@ def _event_to_out(data: dict) -> EventOut:
     return EventOut(
         id=data.get("id", ""),
         name=data.get("name", ""),
-        category=data.get("category", ""),
+        categories=data.get("categories", []),
         subcategory=data.get("subcategory") or None,
         summary=data.get("summary") or None,
         location=data.get("location") or None,
