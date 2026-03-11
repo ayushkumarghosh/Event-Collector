@@ -33,6 +33,86 @@ GRAPH_PATH = os.getenv("GRAPH_PATH", "knowledge_graph.graphml")
 
 ALL_CATEGORIES = ["religion", "state", "holiday", "festival", "situation"]
 
+_INDIAN_STATES = {
+    "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh",
+    "goa", "gujarat", "haryana", "himachal pradesh", "jharkhand", "karnataka",
+    "kerala", "madhya pradesh", "maharashtra", "manipur", "meghalaya", "mizoram",
+    "nagaland", "odisha", "punjab", "rajasthan", "sikkim", "tamil nadu",
+    "telangana", "tripura", "uttar pradesh", "uttarakhand", "west bengal",
+    "delhi", "jammu and kashmir", "ladakh", "chandigarh", "puducherry",
+    "andaman and nicobar", "dadra and nagar haveli", "daman and diu", "lakshadweep",
+}
+
+_CITY_TO_STATE = {
+    "mumbai": "Maharashtra", "pune": "Maharashtra", "nagpur": "Maharashtra",
+    "nashik": "Maharashtra", "aurangabad": "Maharashtra", "thane": "Maharashtra",
+    "delhi": "Delhi", "new delhi": "Delhi", "noida": "Uttar Pradesh",
+    "gurgaon": "Haryana", "gurugram": "Haryana", "faridabad": "Haryana",
+    "bengaluru": "Karnataka", "bangalore": "Karnataka", "mysuru": "Karnataka",
+    "mysore": "Karnataka", "hubli": "Karnataka", "mangaluru": "Karnataka",
+    "mangalore": "Karnataka", "mangalagiri": "Andhra Pradesh",
+    "hyderabad": "Telangana", "warangal": "Telangana", "nizamabad": "Telangana",
+    "chennai": "Tamil Nadu", "coimbatore": "Tamil Nadu", "madurai": "Tamil Nadu",
+    "tiruchirappalli": "Tamil Nadu", "salem": "Tamil Nadu", "tiruppur": "Tamil Nadu",
+    "kolkata": "West Bengal", "howrah": "West Bengal", "durgapur": "West Bengal",
+    "jaipur": "Rajasthan", "jodhpur": "Rajasthan", "udaipur": "Rajasthan",
+    "kota": "Rajasthan", "ajmer": "Rajasthan", "bikaner": "Rajasthan",
+    "ahmedabad": "Gujarat", "surat": "Gujarat", "vadodara": "Gujarat",
+    "rajkot": "Gujarat", "bhavnagar": "Gujarat", "gandhinagar": "Gujarat",
+    "lucknow": "Uttar Pradesh", "kanpur": "Uttar Pradesh", "agra": "Uttar Pradesh",
+    "varanasi": "Uttar Pradesh", "allahabad": "Uttar Pradesh", "prayagraj": "Uttar Pradesh",
+    "mathura": "Uttar Pradesh", "vrindavan": "Uttar Pradesh", "ayodhya": "Uttar Pradesh",
+    "patna": "Bihar", "gaya": "Bihar", "muzaffarpur": "Bihar", "bhagalpur": "Bihar",
+    "bhopal": "Madhya Pradesh", "indore": "Madhya Pradesh", "gwalior": "Madhya Pradesh",
+    "jabalpur": "Madhya Pradesh", "ujjain": "Madhya Pradesh",
+    "chandigarh": "Chandigarh", "amritsar": "Punjab", "ludhiana": "Punjab",
+    "jalandhar": "Punjab", "patiala": "Punjab",
+    "dehradun": "Uttarakhand", "haridwar": "Uttarakhand", "rishikesh": "Uttarakhand",
+    "shimla": "Himachal Pradesh", "manali": "Himachal Pradesh", "dharamsala": "Himachal Pradesh",
+    "srinagar": "Jammu and Kashmir", "jammu": "Jammu and Kashmir",
+    "leh": "Ladakh", "kargil": "Ladakh",
+    "guwahati": "Assam", "dibrugarh": "Assam", "silchar": "Assam",
+    "bhubaneswar": "Odisha", "cuttack": "Odisha", "rourkela": "Odisha",
+    "ranchi": "Jharkhand", "jamshedpur": "Jharkhand", "dhanbad": "Jharkhand",
+    "raipur": "Chhattisgarh", "bilaspur": "Chhattisgarh",
+    "thiruvananthapuram": "Kerala", "kochi": "Kerala", "kozhikode": "Kerala",
+    "thrissur": "Kerala", "kollam": "Kerala",
+    "panaji": "Goa", "margao": "Goa", "vasco": "Goa",
+    "imphal": "Manipur", "shillong": "Meghalaya", "aizawl": "Mizoram",
+    "kohima": "Nagaland", "agartala": "Tripura", "gangtok": "Sikkim",
+    "itanagar": "Arunachal Pradesh", "dispur": "Assam",
+    "pondicherry": "Puducherry", "puducherry": "Puducherry",
+    "port blair": "Andaman and Nicobar",
+    "visakhapatnam": "Andhra Pradesh", "vizag": "Andhra Pradesh",
+    "vijayawada": "Andhra Pradesh", "tirupati": "Andhra Pradesh",
+    "amaravati": "Andhra Pradesh",
+}
+
+
+def normalize_location(location: str | None) -> str:
+    """Normalize a location string to just the Indian state name, or 'India'."""
+    if not location:
+        return "India"
+    loc = location.strip()
+    loc_lower = loc.lower()
+    if loc_lower == "india":
+        return "India"
+    if loc_lower in _INDIAN_STATES:
+        return " ".join(w.capitalize() for w in loc_lower.split())
+    parts = [p.strip() for p in loc.split(",")]
+    for part in reversed(parts):
+        part_lower = part.lower().strip()
+        if part_lower == "india":
+            continue
+        if part_lower in _INDIAN_STATES:
+            return " ".join(w.capitalize() for w in part_lower.split())
+        if part_lower in _CITY_TO_STATE:
+            return _CITY_TO_STATE[part_lower]
+    first = parts[0].lower().strip() if parts else ""
+    if first in _CITY_TO_STATE:
+        return _CITY_TO_STATE[first]
+    return "India"
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -233,7 +313,7 @@ class KnowledgeGraph:
                 continue
             if severity and data.get("severity") != severity:
                 continue
-            if location and location.lower() not in _safe(data.get("location")).lower():
+            if location and location.lower() not in normalize_location(_safe(data.get("location"))).lower():
                 continue
             if q:
                 q_lower = q.lower()
@@ -392,13 +472,16 @@ class KnowledgeGraph:
         return False
 
     def get_locations(self) -> list[str]:
-        """Get all unique non-empty location values from events, sorted by frequency."""
+        """Get all unique Indian state names from events, sorted by frequency."""
         loc_counts: dict[str, int] = {}
         for _, data in self.G.nodes(data=True):
             if data.get("node_type") != "event":
                 continue
-            loc = _safe(data.get("location")).strip()
-            if loc and loc.lower() != "india":
+            raw = _safe(data.get("location")).strip()
+            if not raw:
+                continue
+            loc = normalize_location(raw)
+            if loc and loc != "India":
                 loc_counts[loc] = loc_counts.get(loc, 0) + 1
         return [loc for loc, _ in sorted(loc_counts.items(), key=lambda x: -x[1])]
 

@@ -6,7 +6,7 @@ from collector.extractor import extract_all
 from collector.deduplicator import make_dedup_key
 from storage.database import get_session
 from storage.crud import save_raw_fetch
-from storage.graph import get_graph
+from storage.graph import get_graph, normalize_location
 
 
 def _normalize_categories(event: dict) -> list[str]:
@@ -35,6 +35,9 @@ def _upsert_events(graph, events: list[dict | None], raw_ids: list[int]) -> tupl
 
         # Store categories as list on the event dict
         event["categories"] = categories
+
+        # Normalize location to state name or "India"
+        event["location"] = normalize_location(event.get("location"))
 
         start_date = event.get("start_date")
         dedup_key = make_dedup_key(name, start_date, categories)
