@@ -21,6 +21,7 @@
                 <div class="chips" id="view-chips">
                     <button class="chip active" data-value="cards">Cards</button>
                     <button class="chip" data-value="calendar">Calendar</button>
+                    <button class="chip" data-value="trending">Trending</button>
                 </div>
             </div>
 
@@ -75,6 +76,17 @@
                 <button class="cal-nav-btn" id="cal-next">&rarr;</button>
             </div>
             <div class="calendar-grid" id="calendar-grid"></div>
+        </div>
+
+        <!-- Trending view -->
+        <div class="trending-container" id="trending-container" style="display:none">
+            <div class="trending-header">
+                <h2>Trending for Clips</h2>
+                <p class="trending-subtitle">Events with participatory trend potential — create your own version!</p>
+            </div>
+            <div class="trending-grid" id="trending-grid">
+                <p class="loading">Analyzing events with Gemini...</p>
+            </div>
         </div>
 
         <!-- Day modal for expanded view -->

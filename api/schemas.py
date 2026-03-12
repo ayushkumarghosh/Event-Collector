@@ -35,6 +35,25 @@ class EntityOut(BaseModel):
     event_count: int
 
 
+class TrendingEventOut(BaseModel):
+    id: str
+    name: str
+    categories: list[str] = []
+    subcategory: str | None = None
+    summary: str | None = None
+    location: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    severity: str = "normal"
+    importance: float = 5
+    source_url: str | None = None
+    trend_name: str | None = None
+    trend_idea: str | None = None
+    hook: str | None = None
+    virality_score: int = 5
+    editing_suggestion: dict | None = None
+
+
 class StatsOut(BaseModel):
     total_events: int
     total_entities: int

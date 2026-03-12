@@ -1,9 +1,69 @@
-from fastapi import APIRouter, Query, HTTPException
+import json
+import re
+from datetime import date, timedelta
 
+from fastapi import APIRouter, Query, HTTPException
+from google import genai
+from google.genai.errors import ClientError, ServerError
+
+from config import GEMINI_API_KEY, LLM_MODEL
 from storage.graph import get_graph
-from api.schemas import EventOut, EventDetailOut, EntityOut
+from api.schemas import EventOut, EventDetailOut, EntityOut, TrendingEventOut
 
 router = APIRouter()
+
+_gemini_client = genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": 120_000})
+
+TRENDING_PROMPT = """You are a social media trend strategist for an Indian audience. Below is a list of current events happening in India (within the past 3 days and upcoming 3 days).
+
+Pick ONLY events that can spark a PARTICIPATORY TREND — where regular users can create their own clips inspired by the event. The key test: "Can thousands of random people make their own version of this clip?"
+
+GOOD examples (participatory):
+- India wins T20 World Cup → everyone films their celebration reactions, street celebrations, "POV: India won" clips
+- Holi festival → color throwing clips, outfit transitions, prank videos, "before vs after Holi" trends
+- CBSE exam day → relatable student reaction clips, "POV: walking out of math exam", parent reaction clips
+- A viral dialogue/moment → lip sync, reenactments, meme templates
+- National holiday → patriotic transitions, flag hoisting clips, "proud moment" trends
+
+BAD examples (NOT participatory — only news channels can cover these):
+- Stock market crash → regular people can't make their own version
+- Accident or crime news → only reportable, not recreatable
+- Government policy announcement → no user participation angle
+- Celebrity rumors → only gossip, users can't participate
+
+For EACH selected event, return EXACTLY this JSON structure:
+{{
+  "index": <integer 0-based index>,
+  "trend_name": "<short catchy trend name e.g. '#IndiaCricketReaction', '#HoliTransition', '#ExamPOV'>",
+  "trend_idea": "<1-2 sentence specific challenge/trend users can copy>",
+  "hook": "<short punchy caption for the clip>",
+  "virality_score": <integer 1-10>,
+  "editing_suggestion": {{
+    "filterPreset": "<MUST be exactly one of: none, grayscale, sepia, highContrast, coolTone, warmTone>",
+    "effects": [<list of objects, each MUST be one of: {{"name":"fadeIn"}}, {{"name":"fadeOut"}}, {{"name":"zoom"}}, {{"name":"shake"}}, {{"name":"blur"}}>],
+    "colorAdjustments": {{
+      "brightness": <number -1 to 1>,
+      "saturation": <number 0 to 3>,
+      "contrast": <number -2 to 2>
+    }},
+    "speed": <number 0.25 to 4, only if slow/fast motion helps>,
+    "vignette": <true or false>,
+    "textLayers": [<optional, list of {{"text":"...","color":"#RRGGBB","x":0.5,"y":0.1,"scale":1.5,"opacity":1}}>],
+    "stickerLayers": [<optional, list of {{"stickerDescription":"<describe the sticker e.g. 'Indian flag waving', 'fire emoji', 'cricket trophy'>","x":0.5,"y":0.5,"scale":1,"rotation":0,"opacity":1}}>]
+  }}
+}}
+
+STRICT RULES:
+- virality_score MUST be an integer (not "9/10", not 9.5 — just the number 9)
+- filterPreset MUST be exactly one of the 6 allowed values above — no custom values
+- effects MUST only contain objects from the allowed 5 effect names
+- Return a JSON array sorted by virality_score descending
+- Select at most {max_count} events, fewer if not enough qualify
+- Return ONLY the JSON array, no markdown fences, no explanation
+
+Events:
+{events_text}
+"""
 
 
 def _event_to_out(data: dict) -> EventOut:
@@ -82,6 +142,121 @@ def get_timeline(
 def list_locations():
     graph = get_graph()
     return graph.get_locations()
+
+
+@router.get("/trending", response_model=list[TrendingEventOut])
+def get_trending(
+    max_count: int = Query(10, ge=1, le=30, description="Max number of trending events to return"),
+    days_back: int = Query(3, ge=1, le=7),
+    days_ahead: int = Query(3, ge=1, le=7),
+):
+    """Get the most clip-worthy/engaging events from the current week, ranked by Gemini."""
+    graph = get_graph()
+
+    today = date.today()
+    start = (today - timedelta(days=days_back)).isoformat()
+    end = (today + timedelta(days=days_ahead)).isoformat()
+
+    events = graph.get_timeline(start, end)
+    if not events:
+        return []
+
+    # Build event list for Gemini
+    parts = []
+    for i, ev in enumerate(events):
+        cats = ev.get("categories", [])
+        cats_str = ", ".join(cats) if isinstance(cats, list) else str(cats)
+        parts.append(
+            f"[{i}] {ev.get('name', '?')} | {cats_str} | "
+            f"{ev.get('start_date', '?')} | {ev.get('location', '?')} | "
+            f"severity={ev.get('severity', '?')} | "
+            f"{(ev.get('summary', '') or '')[:150]}"
+        )
+
+    prompt = TRENDING_PROMPT.format(
+        max_count=max_count,
+        events_text="\n".join(parts),
+    )
+
+    try:
+        response = _gemini_client.models.generate_content(model=LLM_MODEL, contents=prompt)
+        raw = response.text.strip()
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        picks = json.loads(raw.strip())
+        if not isinstance(picks, list):
+            picks = []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini error: {e}")
+
+    VALID_FILTERS = {"none", "grayscale", "sepia", "highContrast", "coolTone", "warmTone"}
+    VALID_EFFECTS = {"fadeIn", "fadeOut", "zoom", "shake", "blur"}
+
+    def _sanitize_editing(s: dict | None) -> dict | None:
+        if not isinstance(s, dict):
+            return None
+        out = {}
+        # Filter preset
+        fp = s.get("filterPreset", "none")
+        out["filterPreset"] = fp if fp in VALID_FILTERS else "none"
+        # Effects
+        effects = [e for e in (s.get("effects") or []) if isinstance(e, dict) and e.get("name") in VALID_EFFECTS]
+        if effects:
+            out["effects"] = effects
+        # Color adjustments
+        ca = s.get("colorAdjustments")
+        if isinstance(ca, dict):
+            out["colorAdjustments"] = {
+                k: round(float(v), 2) for k, v in ca.items()
+                if k in {"brightness", "saturation", "contrast", "gamma", "hue", "hueSaturation"} and isinstance(v, (int, float))
+            }
+        # Speed
+        speed = s.get("speed")
+        if isinstance(speed, (int, float)) and speed != 1:
+            out["speed"] = max(0.25, min(4.0, float(speed)))
+        # Vignette
+        if isinstance(s.get("vignette"), bool):
+            out["vignette"] = s["vignette"]
+        # Text layers
+        texts = [t for t in (s.get("textLayers") or []) if isinstance(t, dict) and t.get("text")]
+        if texts:
+            out["textLayers"] = texts
+        # Sticker layers
+        stickers = [t for t in (s.get("stickerLayers") or []) if isinstance(t, dict) and t.get("stickerDescription")]
+        if stickers:
+            out["stickerLayers"] = stickers
+        return out
+
+    results = []
+    for pick in picks:
+        idx = pick.get("index", -1)
+        if not isinstance(idx, int) or not (0 <= idx < len(events)):
+            continue
+        ev = events[idx]
+        # Parse virality_score robustly (Gemini sometimes returns "9/10" or 9.5)
+        raw_score = pick.get("virality_score", 5)
+        if isinstance(raw_score, str):
+            raw_score = int(raw_score.split("/")[0].strip())
+        results.append(TrendingEventOut(
+            id=ev.get("id", ""),
+            name=ev.get("name", ""),
+            categories=ev.get("categories", []),
+            subcategory=ev.get("subcategory") or None,
+            summary=ev.get("summary") or None,
+            location=ev.get("location") or None,
+            start_date=ev.get("start_date") or None,
+            end_date=ev.get("end_date") or None,
+            severity=ev.get("severity", "normal"),
+            importance=float(ev.get("importance", 5)),
+            source_url=ev.get("source_url") or None,
+            trend_name=pick.get("trend_name"),
+            trend_idea=pick.get("trend_idea"),
+            hook=pick.get("hook"),
+            virality_score=int(raw_score),
+            editing_suggestion=_sanitize_editing(pick.get("editing_suggestion")),
+        ))
+
+    return results
 
 
 @router.get("/entities", response_model=list[EntityOut])
