@@ -62,9 +62,21 @@ def run_pipeline(category_filter: str | None = None):
     graph = get_graph()
 
     # 1. Fetch from all sources (RSS, Google Trends, Eventbrite, Calendarific)
-    raw_articles = asyncio.run(fetch_all_sources(sources))
+    raw_articles, cal_sub_events = asyncio.run(fetch_all_sources(sources))
+
+    # 1b. Insert pre-structured sub-events directly (bypass Gemini)
+    if cal_sub_events:
+        sub_saved, sub_skipped = _upsert_events(graph, cal_sub_events, [])
+        print(f"  Sub-events: upserted {sub_saved}, skipped {sub_skipped} (direct, no Gemini)")
+
     if not raw_articles:
-        print("  No new articles found.")
+        if cal_sub_events:
+            graph.save()
+            stats = graph.get_stats()
+            print(f"  Graph: {stats['total_events']} events, {stats['total_entities']} entities, {stats['total_relations']} relations")
+            print(f"=== Pipeline complete ===\n")
+        else:
+            print("  No new articles found.")
         return
 
     # 2. Deduplicate by content_hash (overlapping sources produce same hash)

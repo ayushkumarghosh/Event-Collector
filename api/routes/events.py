@@ -14,7 +14,42 @@ router = APIRouter()
 
 _gemini_client = genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": 120_000})
 
-TRENDING_PROMPT = """You are a social media trend strategist for an Indian audience. Below is a list of current events happening in India (within the past 3 days and upcoming 3 days).
+TRENDING_PROMPT = """You are a Viral Event Manager, Growth Hacker, and Behavioral Psychologist specializing in the Indian social media audience.
+
+Below is a list of current events happening in India (within the past 3 days and upcoming 3 days).
+
+---
+
+STEP 1 — TREND ANALYSIS
+
+Analyze each event for:
+- Emotional engagement (fun, pride, curiosity, nostalgia)
+- Shareability — would someone repost or duet this?
+- Cultural relevance to Indian audiences (regional festivals, cricket, Bollywood, student life)
+- Ease of participation — can a regular person with just a phone create content?
+- Meme potential — can it become a template, format, or sound trend?
+
+---
+
+STEP 2 — SAFETY FILTER (MANDATORY)
+
+IMMEDIATELY REJECT any event that involves:
+- Politics, political parties, politicians, elections, government policy, or legislation
+- Legal or compliance risk — court cases, arrests, investigations, scams, fraud allegations
+- Violence, crime, accidents, deaths, terrorism, or military conflict
+- Sensitive social issues — poverty, discrimination, assault, abuse
+- Anything that would make a brand or platform look bad if associated with it
+
+ONLY ALLOW events that are:
+- Fun, entertaining, or culturally engaging
+- Safe for all ages and all communities
+- Brand-safe — a major brand could sponsor this trend without PR risk
+
+When in doubt, SKIP the event. It is better to return fewer results than to include a risky one.
+
+---
+
+STEP 3 — PARTICIPATORY FILTER
 
 Pick ONLY events that can spark a PARTICIPATORY TREND — where regular users can create their own clips inspired by the event. The key test: "Can thousands of random people make their own version of this clip?"
 
@@ -31,13 +66,68 @@ BAD examples (NOT participatory — only news channels can cover these):
 - Government policy announcement → no user participation angle
 - Celebrity rumors → only gossip, users can't participate
 
+---
+
+STEP 4 — CHALLENGE DESIGN (Viral Formula)
+
+For each selected event, design a trend/challenge that follows this viral loop:
+
+HOOK → SIMPLE ACTION → SHARE → INVITE FRIENDS → REPEAT
+
+The challenge must be:
+- Simple to understand in under 3 seconds
+- Easy to participate in with just a smartphone
+- Fun, engaging, and highly shareable
+- Suitable for short-form video (Reels, Shorts, TikTok)
+
+---
+
+STEP 5 — VIRAL PSYCHOLOGY TRIGGERS
+
+For each trend, incorporate at least 2 of these behavioral triggers:
+- Social proof ("everyone is doing this")
+- FOMO (limited-time relevance — the event is happening NOW)
+- Competition (who did it better?)
+- Status & recognition (makes the creator look good, funny, or talented)
+- Emotional engagement (pride, nostalgia, humor, relatability)
+- Community belonging (shared identity — "only Indians will understand")
+- Social currency (people share things that make them look cool or in-the-know)
+
+---
+
+STEP 6 — VIRAL GROWTH MECHANICS
+
+Design each trend idea so it naturally encourages:
+- "Tag a friend who..." or "Duet this" mechanics
+- Team/group participation (couples, friend groups, families)
+- Share-to-unlock or chain challenges ("do this and nominate 3 people")
+- User-generated content that others can remix, react to, or build upon
+
+---
+
+STEP 7 — PLATFORM STRATEGY
+
+Consider how the trend would perform across:
+- Instagram Reels / YouTube Shorts (primary — short video)
+- WhatsApp Status (high sharing in India)
+- X / Twitter (quote tweets, meme threads)
+
+The hook and trend idea should be optimized for short-form vertical video.
+
+---
+
+OUTPUT FORMAT
+
 For EACH selected event, return EXACTLY this JSON structure:
 {{
-  "index": <integer 0-based index>,
+  "index": <integer 0-based index from the event list>,
   "trend_name": "<short catchy trend name e.g. '#IndiaCricketReaction', '#HoliTransition', '#ExamPOV'>",
-  "trend_idea": "<1-2 sentence specific challenge/trend users can copy>",
-  "hook": "<short punchy caption for the clip>",
+  "trend_idea": "<1-2 sentence specific challenge/trend users can copy — must follow the HOOK → ACTION → SHARE formula>",
+  "hook": "<short punchy caption for the clip — must grab attention in under 3 seconds>",
   "virality_score": <integer 1-10>,
+  "psychology_triggers": [<list of 2-4 triggers used, e.g. "FOMO", "social_proof", "competition", "status", "emotion", "belonging", "social_currency">],
+  "growth_mechanic": "<one-line description of how this trend spreads — e.g. 'Tag 3 friends to do their version', 'Duet chain challenge', 'Couples version vs solo version'>",
+  "platform_fit": [<list from: "reels", "shorts", "whatsapp", "twitter">],
   "editing_suggestion": {{
     "filterPreset": "<MUST be exactly one of: none, grayscale, sepia, highContrast, coolTone, warmTone>",
     "effects": [<list of objects, each MUST be one of: {{"name":"fadeIn"}}, {{"name":"fadeOut"}}, {{"name":"zoom"}}, {{"name":"shake"}}, {{"name":"blur"}}>],
@@ -55,11 +145,15 @@ For EACH selected event, return EXACTLY this JSON structure:
 
 STRICT RULES:
 - virality_score MUST be an integer (not "9/10", not 9.5 — just the number 9)
+- virality_score criteria: 10 = guaranteed viral (national moment + universal participation), 7-9 = high potential, 4-6 = niche but engaged, 1-3 = low reach
 - filterPreset MUST be exactly one of the 6 allowed values above — no custom values
 - effects MUST only contain objects from the allowed 5 effect names
+- psychology_triggers MUST only use values from the allowed list
+- platform_fit MUST only use values from: "reels", "shorts", "whatsapp", "twitter"
 - Return a JSON array sorted by virality_score descending
 - Select at most {max_count} events, fewer if not enough qualify
 - Return ONLY the JSON array, no markdown fences, no explanation
+- If NO events pass both the safety filter and participatory filter, return an empty array []
 
 Events:
 {events_text}
@@ -191,6 +285,18 @@ def get_trending(
 
     VALID_FILTERS = {"none", "grayscale", "sepia", "highContrast", "coolTone", "warmTone"}
     VALID_EFFECTS = {"fadeIn", "fadeOut", "zoom", "shake", "blur"}
+    VALID_TRIGGERS = {"FOMO", "social_proof", "competition", "status", "emotion", "belonging", "social_currency"}
+    VALID_PLATFORMS = {"reels", "shorts", "whatsapp", "twitter"}
+
+    def _sanitize_triggers(raw: list | None) -> list[str]:
+        if not isinstance(raw, list):
+            return []
+        return [t for t in raw if isinstance(t, str) and t in VALID_TRIGGERS]
+
+    def _sanitize_platforms(raw: list | None) -> list[str]:
+        if not isinstance(raw, list):
+            return []
+        return [p for p in raw if isinstance(p, str) and p in VALID_PLATFORMS]
 
     def _sanitize_editing(s: dict | None) -> dict | None:
         if not isinstance(s, dict):
@@ -253,6 +359,9 @@ def get_trending(
             trend_idea=pick.get("trend_idea"),
             hook=pick.get("hook"),
             virality_score=int(raw_score),
+            psychology_triggers=_sanitize_triggers(pick.get("psychology_triggers")),
+            growth_mechanic=pick.get("growth_mechanic") or None,
+            platform_fit=_sanitize_platforms(pick.get("platform_fit")),
             editing_suggestion=_sanitize_editing(pick.get("editing_suggestion")),
         ))
 

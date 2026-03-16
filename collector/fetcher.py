@@ -90,12 +90,12 @@ async def fetch_all_sources(sources: list[FeedSource]) -> list[dict]:
         article["content_hash"] = compute_content_hash(article["url"], article["title"])
     all_articles.extend(eb_articles)
 
-    # Fetch Calendarific holidays (pre-extracted, skip LLM)
-    cal_articles = fetch_calendarific_holidays()
+    # Fetch Calendarific holidays + pre-structured sub-events
+    cal_articles, cal_sub_events = fetch_calendarific_holidays()
     for article in cal_articles:
         article["content_hash"] = compute_content_hash(article["url"], article["title"])
     all_articles.extend(cal_articles)
 
     unseen = _filter_unseen(all_articles)
     print(f"  Fetched {len(all_articles)} articles, {len(unseen)} new (unseen)")
-    return unseen
+    return unseen, cal_sub_events

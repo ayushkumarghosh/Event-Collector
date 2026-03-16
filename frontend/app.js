@@ -330,36 +330,64 @@ function expandDay(day) {
 }
 
 function renderEditingSuggestion(s) {
-    const chips = [];
+    if (!s || typeof s !== "object") return "";
 
-    if (s.filterPreset && s.filterPreset !== "none")
-        chips.push(`<span class="edit-chip filter">${s.filterPreset}</span>`);
+    const rows = [];
 
-    if (Array.isArray(s.effects))
-        s.effects.forEach(e => chips.push(`<span class="edit-chip effect">${e.name}</span>`));
+    // filterPreset
+    if (s.filterPreset && s.filterPreset !== "none") {
+        rows.push(`<div class="edit-row"><span class="edit-label">filterPreset</span><span class="edit-chip filter">${escapeHtml(s.filterPreset)}</span></div>`);
+    }
 
-    if (s.speed !== undefined && s.speed !== 1)
-        chips.push(`<span class="edit-chip playback">${s.speed}x speed</span>`);
+    // effects
+    if (Array.isArray(s.effects) && s.effects.length) {
+        const chips = s.effects.map(e => `<span class="edit-chip effect">${escapeHtml(e.name)}</span>`).join("");
+        rows.push(`<div class="edit-row"><span class="edit-label">effects</span><div class="edit-chips-inline">${chips}</div></div>`);
+    }
 
-    if (s.vignette === true)
-        chips.push(`<span class="edit-chip effect">vignette</span>`);
-
+    // colorAdjustments
     const ca = s.colorAdjustments || {};
-    if (ca.brightness !== undefined && ca.brightness !== 0)
-        chips.push(`<span class="edit-chip color">brightness ${ca.brightness > 0 ? "+" : ""}${ca.brightness}</span>`);
-    if (ca.saturation !== undefined && ca.saturation !== 1)
-        chips.push(`<span class="edit-chip color">saturation ${ca.saturation}</span>`);
-    if (ca.contrast !== undefined && ca.contrast !== 1)
-        chips.push(`<span class="edit-chip color">contrast ${ca.contrast}</span>`);
+    const caItems = [];
+    if (ca.brightness !== undefined) caItems.push(`brightness: ${ca.brightness}`);
+    if (ca.saturation !== undefined) caItems.push(`saturation: ${ca.saturation}`);
+    if (ca.contrast !== undefined) caItems.push(`contrast: ${ca.contrast}`);
+    if (caItems.length) {
+        rows.push(`<div class="edit-row"><span class="edit-label">colorAdjustments</span><span class="edit-value color">${caItems.join(" | ")}</span></div>`);
+    }
 
+    // speed
+    if (s.speed !== undefined && s.speed !== 1) {
+        rows.push(`<div class="edit-row"><span class="edit-label">speed</span><span class="edit-chip playback">${s.speed}x</span></div>`);
+    }
+
+    // vignette
+    if (s.vignette !== undefined) {
+        rows.push(`<div class="edit-row"><span class="edit-label">vignette</span><span class="edit-value">${s.vignette ? "true" : "false"}</span></div>`);
+    }
+
+    // textLayers
     const texts = s.textLayers || [];
-    texts.forEach(t => chips.push(`<span class="edit-chip text">"${t.text}"</span>`));
+    if (texts.length) {
+        const chips = texts.map(t =>
+            `<span class="edit-chip text">"${escapeHtml(t.text)}" <span class="edit-sub">${t.color || ""} (${t.x},${t.y})</span></span>`
+        ).join("");
+        rows.push(`<div class="edit-row"><span class="edit-label">textLayers</span><div class="edit-chips-inline">${chips}</div></div>`);
+    }
 
-    if (!chips.length) return "";
+    // stickerLayers
+    const stickers = s.stickerLayers || [];
+    if (stickers.length) {
+        const chips = stickers.map(st =>
+            `<span class="edit-chip sticker">${escapeHtml(st.stickerDescription)} <span class="edit-sub">(${st.x},${st.y})</span></span>`
+        ).join("");
+        rows.push(`<div class="edit-row"><span class="edit-label">stickerLayers</span><div class="edit-chips-inline">${chips}</div></div>`);
+    }
+
+    if (!rows.length) return "";
 
     return `<div class="editing-suggestion">
-        <span class="editing-suggestion-label">Editing</span>
-        <div class="edit-chips">${chips.join("")}</div>
+        <span class="editing-suggestion-label">editing_suggestion</span>
+        <div class="edit-rows">${rows.join("")}</div>
     </div>`;
 }
 
@@ -404,35 +432,55 @@ function renderTrending(events) {
             `<span class="score-dot ${j < ev.virality_score ? 'active' : ''}"></span>`
         ).join("");
 
+        const triggersHtml = (ev.psychology_triggers || []).length
+            ? ev.psychology_triggers.map(t => `<span class="trigger-chip">${escapeHtml(t)}</span>`).join("")
+            : `<span class="field-empty">none</span>`;
+
+
         return `
         <div class="trending-card">
             <div class="trending-rank">#${i + 1}</div>
             <div class="trending-body">
-                <div class="trending-title">
+                <div class="trending-event-info">
                     <span class="event-name">${escapeHtml(ev.name)}</span>
-                    ${ev.trend_name ? `<span class="trend-name-badge">${escapeHtml(ev.trend_name)}</span>` : ""}
+                    <div class="trending-event-meta">
+                        ${catTags}
+                        ${dateStr ? `<span class="meta-tag">${dateStr}</span>` : ""}
+                        ${ev.location ? `<span class="meta-tag">${ev.location}</span>` : ""}
+                        ${sourceLink}
+                    </div>
                 </div>
-                ${ev.summary ? `<p class="trending-summary">${escapeHtml(ev.summary)}</p>` : ""}
-                <div class="trending-idea">
-                    <span class="trending-idea-label">Trend Idea</span>
-                    <p>${escapeHtml(ev.trend_idea || "")}</p>
-                </div>
-                <div class="trending-hook">
-                    <span class="trending-hook-label">Hook</span>
-                    <p>${escapeHtml(ev.hook || "")}</p>
-                </div>
-                <div class="trending-score">
-                    <span class="trending-score-label">Virality</span>
-                    <div class="score-dots">${scoreDots}</div>
-                    <span class="score-num">${ev.virality_score}/10</span>
+                <div class="trending-fields">
+                    <div class="field-row">
+                        <span class="field-label">trend_name</span>
+                        <span class="field-value trend-name-badge">${escapeHtml(ev.trend_name || "—")}</span>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">trend_idea</span>
+                        <span class="field-value">${escapeHtml(ev.trend_idea || "—")}</span>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">hook</span>
+                        <span class="field-value field-hook">${escapeHtml(ev.hook || "—")}</span>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">virality_score</span>
+                        <div class="field-value">
+                            <div class="score-dots">${scoreDots}</div>
+                            <span class="score-num">${ev.virality_score}/10</span>
+                        </div>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">psychology_triggers</span>
+                        <div class="field-value field-chips">${triggersHtml}</div>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">growth_mechanic</span>
+                        <span class="field-value">${escapeHtml(ev.growth_mechanic || "—")}</span>
+                    </div>
+
                 </div>
                 ${ev.editing_suggestion ? renderEditingSuggestion(ev.editing_suggestion) : ""}
-                <div class="trending-meta">
-                    ${catTags}
-                    ${dateStr ? `<span class="meta-tag">${dateStr}</span>` : ""}
-                    ${ev.location ? `<span class="meta-tag">${ev.location}</span>` : ""}
-                    ${sourceLink}
-                </div>
             </div>
         </div>`;
     }).join("");

@@ -57,6 +57,8 @@ Severity guidelines:
 
 DEDUPLICATION: If multiple articles in this batch are about the SAME event (same topic, same date, same location — just reported by different sources), merge them into ONE event entry and return null for the duplicate articles. Pick the best name, combine information from all sources into the summary, and use the most informative source_url.
 
+IMPORTANT — DO NOT MERGE SUB-EVENTS: Multi-day festivals and celebrations have distinct sub-events on different dates (e.g. Rose Day, Propose Day, Chocolate Day are all part of Valentine's Week but each is a SEPARATE event on a different date). Similarly, Navratri Day 1-9, Durga Puja Shashti/Saptami/Ashtami/Navami, Diwali's Dhanteras/Chhoti Diwali/Govardhan Puja/Bhai Dooj, Pongal's 4 days, Ganesh Chaturthi's 10 days, etc. — these must each be kept as individual events with their own dates. Only merge if two articles describe the EXACT same sub-event on the EXACT same date.
+
 Return a JSON array with one element per article. If an article is not about a real event, is not relevant to India, or is a DUPLICATE of another article in this batch, return null for that element.
 
 IMPORTANT: Return ONLY the JSON array, no markdown formatting, no explanation.
@@ -69,6 +71,8 @@ Articles:
 DEDUP_PROMPT_TEMPLATE = """You are a deduplication system. Below is a list of extracted events. Identify groups of events that are about the SAME real-world event (same topic/incident, same or overlapping dates, same or nearby location).
 
 For each group of duplicates, keep only the BEST one (most informative name, best summary) and mark the rest for removal.
+
+IMPORTANT: Do NOT mark sub-events of multi-day festivals as duplicates of each other. Events like "Rose Day", "Propose Day", "Chocolate Day" (Valentine's Week), or "Navratri Day 1", "Navratri Day 2", or "Dhanteras", "Chhoti Diwali", "Bhai Dooj" (Diwali), or "Maha Shashti", "Maha Saptami" (Durga Puja), etc. are DISTINCT events on DIFFERENT dates — they must NOT be merged. Only mark true duplicates (same event reported by different sources).
 
 Return a JSON array of indices (0-based) to REMOVE. If there are no duplicates, return an empty array [].
 

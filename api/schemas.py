@@ -51,6 +51,9 @@ class TrendingEventOut(BaseModel):
     trend_idea: str | None = None
     hook: str | None = None
     virality_score: int = 5
+    psychology_triggers: list[str] = []
+    growth_mechanic: str | None = None
+    platform_fit: list[str] = []
     editing_suggestion: dict | None = None
 
 
