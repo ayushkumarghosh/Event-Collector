@@ -51,6 +51,11 @@ class TrendingEventOut(BaseModel):
     trend_idea: str | None = None
     hook: str | None = None
     virality_score: int = 5
+    target_audience: list[str] = []
+    virality_level: str = "low"
+    source_coverage: str | None = None
+    source_coverage_pct: int = 0
+    participation_difficulty: str = "low"
     psychology_triggers: list[str] = []
     growth_mechanic: str | None = None
     platform_fit: list[str] = []

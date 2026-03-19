@@ -756,6 +756,38 @@ main {
     color: #92400e;
 }
 
+.audience-chip {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    font-weight: 600;
+    background: #e0e7ff;
+    color: #3730a3;
+    text-transform: capitalize;
+}
+
+.level-badge, .difficulty-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 20px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.level-badge.level-low    { background: #dcfce7; color: #166534; }
+.level-badge.level-medium { background: #fef3c7; color: #92400e; }
+.level-badge.level-high   { background: #fee2e2; color: #991b1b; }
+
+.difficulty-badge.difficulty-low    { background: #dcfce7; color: #166534; }
+.difficulty-badge.difficulty-medium { background: #fef3c7; color: #92400e; }
+.difficulty-badge.difficulty-high   { background: #fee2e2; color: #991b1b; }
+
+.source-coverage {
+    font-size: 0.7rem;
+    color: #6b7280;
+    font-family: "SF Mono", "Consolas", "Monaco", monospace;
+}
+
 .platform-chip {
     font-size: 0.65rem;
     padding: 0.15rem 0.5rem;

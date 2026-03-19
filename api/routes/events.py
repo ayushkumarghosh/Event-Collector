@@ -1,6 +1,7 @@
 import json
 import re
-from datetime import date, timedelta
+import threading
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Query, HTTPException
 from google import genai
@@ -8,9 +9,16 @@ from google.genai.errors import ClientError, ServerError
 
 from config import GEMINI_API_KEY, LLM_MODEL
 from storage.graph import get_graph
+from storage.database import get_session
+from storage.crud import get_source_coverage
+from collector.pipeline import run_pipeline
 from api.schemas import EventOut, EventDetailOut, EntityOut, TrendingEventOut
 
 router = APIRouter()
+
+# Collection job state
+_collect_lock = threading.Lock()
+_collect_status = {"running": False, "last_run": None, "last_error": None}
 
 _gemini_client = genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": 120_000})
 
@@ -125,6 +133,8 @@ For EACH selected event, return EXACTLY this JSON structure:
   "trend_idea": "<1-2 sentence specific challenge/trend users can copy — must follow the HOOK → ACTION → SHARE formula>",
   "hook": "<short punchy caption for the clip — must grab attention in under 3 seconds>",
   "virality_score": <integer 1-10>,
+  "target_audience": [<list of 1-3 audience segments this trend appeals to most, from: "gen_z", "millennials", "gen_x", "students", "couples", "singles", "parents", "families", "sports_fans", "foodies", "gamers", "creators", "professionals">],
+  "participation_difficulty": "<MUST be exactly one of: low, medium, high — low = anyone can do it with a phone, medium = needs some effort/props/skills, high = needs planning/group/equipment>",
   "psychology_triggers": [<list of 2-4 triggers used, e.g. "FOMO", "social_proof", "competition", "status", "emotion", "belonging", "social_currency">],
   "growth_mechanic": "<one-line description of how this trend spreads — e.g. 'Tag 3 friends to do their version', 'Duet chain challenge', 'Couples version vs solo version'>",
   "platform_fit": [<list from: "reels", "shorts", "whatsapp", "twitter">],
@@ -148,6 +158,8 @@ STRICT RULES:
 - virality_score criteria: 10 = guaranteed viral (national moment + universal participation), 7-9 = high potential, 4-6 = niche but engaged, 1-3 = low reach
 - filterPreset MUST be exactly one of the 6 allowed values above — no custom values
 - effects MUST only contain objects from the allowed 5 effect names
+- target_audience MUST only use values from the allowed 13 segments listed above
+- participation_difficulty MUST be exactly one of: "low", "medium", "high"
 - psychology_triggers MUST only use values from the allowed list
 - platform_fit MUST only use values from: "reels", "shorts", "whatsapp", "twitter"
 - Return a JSON array sorted by virality_score descending
@@ -238,6 +250,40 @@ def list_locations():
     return graph.get_locations()
 
 
+@router.post("/collect")
+def trigger_collect(category: str | None = Query(None, description="Optional category filter")):
+    """Trigger source collection pipeline. Runs in background thread."""
+    if not _collect_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Collection already in progress")
+    try:
+        if _collect_status["running"]:
+            _collect_lock.release()
+            raise HTTPException(status_code=409, detail="Collection already in progress")
+        _collect_status["running"] = True
+    finally:
+        if _collect_lock.locked():
+            _collect_lock.release()
+
+    def _run():
+        try:
+            run_pipeline(category_filter=category)
+            _collect_status["last_run"] = datetime.now().isoformat()
+            _collect_status["last_error"] = None
+        except Exception as e:
+            _collect_status["last_error"] = str(e)
+        finally:
+            _collect_status["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started", "category": category}
+
+
+@router.get("/collect/status")
+def collect_status():
+    """Check the status of the collection pipeline."""
+    return _collect_status
+
+
 @router.get("/trending", response_model=list[TrendingEventOut])
 def get_trending(
     max_count: int = Query(10, ge=1, le=30, description="Max number of trending events to return"),
@@ -287,6 +333,8 @@ def get_trending(
     VALID_EFFECTS = {"fadeIn", "fadeOut", "zoom", "shake", "blur"}
     VALID_TRIGGERS = {"FOMO", "social_proof", "competition", "status", "emotion", "belonging", "social_currency"}
     VALID_PLATFORMS = {"reels", "shorts", "whatsapp", "twitter"}
+    VALID_AUDIENCES = {"gen_z", "millennials", "gen_x", "students", "couples", "singles", "parents", "families", "sports_fans", "foodies", "gamers", "creators", "professionals"}
+    VALID_LEVELS = {"low", "medium", "high"}
 
     def _sanitize_triggers(raw: list | None) -> list[str]:
         if not isinstance(raw, list):
@@ -297,6 +345,16 @@ def get_trending(
         if not isinstance(raw, list):
             return []
         return [p for p in raw if isinstance(p, str) and p in VALID_PLATFORMS]
+
+    def _sanitize_audiences(raw: list | None) -> list[str]:
+        if not isinstance(raw, list):
+            return []
+        return [a for a in raw if isinstance(a, str) and a in VALID_AUDIENCES]
+
+    def _sanitize_level(raw, default="medium") -> str:
+        if isinstance(raw, str) and raw.lower() in VALID_LEVELS:
+            return raw.lower()
+        return default
 
     def _sanitize_editing(s: dict | None) -> dict | None:
         if not isinstance(s, dict):
@@ -334,36 +392,59 @@ def get_trending(
         return out
 
     results = []
-    for pick in picks:
-        idx = pick.get("index", -1)
-        if not isinstance(idx, int) or not (0 <= idx < len(events)):
-            continue
-        ev = events[idx]
-        # Parse virality_score robustly (Gemini sometimes returns "9/10" or 9.5)
-        raw_score = pick.get("virality_score", 5)
-        if isinstance(raw_score, str):
-            raw_score = int(raw_score.split("/")[0].strip())
-        results.append(TrendingEventOut(
-            id=ev.get("id", ""),
-            name=ev.get("name", ""),
-            categories=ev.get("categories", []),
-            subcategory=ev.get("subcategory") or None,
-            summary=ev.get("summary") or None,
-            location=ev.get("location") or None,
-            start_date=ev.get("start_date") or None,
-            end_date=ev.get("end_date") or None,
-            severity=ev.get("severity", "normal"),
-            importance=float(ev.get("importance", 5)),
-            source_url=ev.get("source_url") or None,
-            trend_name=pick.get("trend_name"),
-            trend_idea=pick.get("trend_idea"),
-            hook=pick.get("hook"),
-            virality_score=int(raw_score),
-            psychology_triggers=_sanitize_triggers(pick.get("psychology_triggers")),
-            growth_mechanic=pick.get("growth_mechanic") or None,
-            platform_fit=_sanitize_platforms(pick.get("platform_fit")),
-            editing_suggestion=_sanitize_editing(pick.get("editing_suggestion")),
-        ))
+    with get_session() as session:
+        for pick in picks:
+            idx = pick.get("index", -1)
+            if not isinstance(idx, int) or not (0 <= idx < len(events)):
+                continue
+            ev = events[idx]
+            # Parse virality_score robustly (Gemini sometimes returns "9/10" or 9.5)
+            raw_score = pick.get("virality_score", 5)
+            if isinstance(raw_score, str):
+                raw_score = int(raw_score.split("/")[0].strip())
+
+            # Compute source coverage from raw_fetches
+            event_name = ev.get("name", "")
+            # Extract meaningful keywords from event name (words >= 3 chars)
+            keywords = [w for w in event_name.split() if len(w) >= 3]
+            matching, total = get_source_coverage(session, keywords)
+            pct = round((matching / total) * 100) if total > 0 else 0
+            coverage_str = f"{matching}/{total} sources ({pct}%)"
+
+            # Derive virality_level from source coverage percentage
+            if pct >= 65:
+                virality_level = "high"
+            elif pct >= 35:
+                virality_level = "medium"
+            else:
+                virality_level = "low"
+
+            results.append(TrendingEventOut(
+                id=ev.get("id", ""),
+                name=ev.get("name", ""),
+                categories=ev.get("categories", []),
+                subcategory=ev.get("subcategory") or None,
+                summary=ev.get("summary") or None,
+                location=ev.get("location") or None,
+                start_date=ev.get("start_date") or None,
+                end_date=ev.get("end_date") or None,
+                severity=ev.get("severity", "normal"),
+                importance=float(ev.get("importance", 5)),
+                source_url=ev.get("source_url") or None,
+                trend_name=pick.get("trend_name"),
+                trend_idea=pick.get("trend_idea"),
+                hook=pick.get("hook"),
+                virality_score=int(raw_score),
+                target_audience=_sanitize_audiences(pick.get("target_audience")),
+                virality_level=virality_level,
+                source_coverage=coverage_str,
+                source_coverage_pct=pct,
+                participation_difficulty=_sanitize_level(pick.get("participation_difficulty"), "low"),
+                psychology_triggers=_sanitize_triggers(pick.get("psychology_triggers")),
+                growth_mechanic=pick.get("growth_mechanic") or None,
+                platform_fit=_sanitize_platforms(pick.get("platform_fit")),
+                editing_suggestion=_sanitize_editing(pick.get("editing_suggestion")),
+            ))
 
     return results
 

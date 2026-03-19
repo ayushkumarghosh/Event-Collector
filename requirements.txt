@@ -8,3 +8,4 @@ uvicorn[standard]
 apscheduler
 tenacity
 python-dotenv
+a2wsgi

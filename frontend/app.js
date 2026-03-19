@@ -436,6 +436,10 @@ function renderTrending(events) {
             ? ev.psychology_triggers.map(t => `<span class="trigger-chip">${escapeHtml(t)}</span>`).join("")
             : `<span class="field-empty">none</span>`;
 
+        const audienceHtml = (ev.target_audience || []).length
+            ? ev.target_audience.map(a => `<span class="audience-chip">${escapeHtml(a.replace(/_/g, " "))}</span>`).join("")
+            : `<span class="field-empty">none</span>`;
+
 
         return `
         <div class="trending-card">
@@ -464,11 +468,26 @@ function renderTrending(events) {
                         <span class="field-value field-hook">${escapeHtml(ev.hook || "—")}</span>
                     </div>
                     <div class="field-row">
+                        <span class="field-label">target_audience</span>
+                        <div class="field-value field-chips">${audienceHtml}</div>
+                    </div>
+                    <div class="field-row">
                         <span class="field-label">virality_score</span>
                         <div class="field-value">
                             <div class="score-dots">${scoreDots}</div>
                             <span class="score-num">${ev.virality_score}/10</span>
                         </div>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">virality_level</span>
+                        <div class="field-value">
+                            <span class="level-badge level-${ev.virality_level || 'low'}">${escapeHtml(ev.virality_level || 'low')}</span>
+                            ${ev.source_coverage ? `<span class="source-coverage">${escapeHtml(ev.source_coverage)}</span>` : ""}
+                        </div>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">participation_difficulty</span>
+                        <span class="field-value"><span class="difficulty-badge difficulty-${ev.participation_difficulty || 'low'}">${escapeHtml(ev.participation_difficulty || 'low')}</span></span>
                     </div>
                     <div class="field-row">
                         <span class="field-label">psychology_triggers</span>
