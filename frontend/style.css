@@ -788,6 +788,43 @@ main {
     font-family: "SF Mono", "Consolas", "Monaco", monospace;
 }
 
+.music-suggestion {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.music-track {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: #1e293b;
+}
+
+.music-artist {
+    font-size: 0.78rem;
+    color: #6b7280;
+}
+
+.music-tempo {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.tempo-slow   { background: #ede9fe; color: #5b21b6; }
+.tempo-medium { background: #fef3c7; color: #92400e; }
+.tempo-fast   { background: #fee2e2; color: #991b1b; }
+
+.music-vibe {
+    font-size: 0.72rem;
+    color: #6b7280;
+    font-style: italic;
+    width: 100%;
+}
+
 .platform-chip {
     font-size: 0.65rem;
     padding: 0.15rem 0.5rem;

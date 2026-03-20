@@ -138,9 +138,26 @@ For EACH selected event, return EXACTLY this JSON structure:
   "psychology_triggers": [<list of 2-4 triggers used, e.g. "FOMO", "social_proof", "competition", "status", "emotion", "belonging", "social_currency">],
   "growth_mechanic": "<one-line description of how this trend spreads — e.g. 'Tag 3 friends to do their version', 'Duet chain challenge', 'Couples version vs solo version'>",
   "platform_fit": [<list from: "reels", "shorts", "whatsapp", "twitter">],
+  "music_suggestion": {{
+    "track": "<name of a real, well-known song that fits the trend — preferably a popular Bollywood, Indian pop, or trending international track>",
+    "artist": "<artist or composer name>",
+    "vibe": "<one-line description of why this track fits, e.g. 'upbeat celebratory energy matches the festive mood'>",
+    "tempo": "<MUST be exactly one of: slow, medium, fast>"
+  }},
   "editing_suggestion": {{
     "filterPreset": "<MUST be exactly one of: none, grayscale, sepia, highContrast, coolTone, warmTone>",
-    "effects": [<list of objects, each MUST be one of: {{"name":"fadeIn"}}, {{"name":"fadeOut"}}, {{"name":"zoom"}}, {{"name":"shake"}}, {{"name":"blur"}}>],
+    "effects": [<list of effect objects. Each object MUST have a "name" field from the allowed list, plus optional params:
+      {{"name":"fadeIn"}} — no params
+      {{"name":"fadeOut"}} — no params
+      {{"name":"zoom", "factor": 1.2}} — factor: number (default 1.2)
+      {{"name":"shake", "amplitude": 5}} — amplitude: number in px (default 5)
+      {{"name":"blur"}} — no params
+      {{"name":"glitch", "intensity": 0.5}} — intensity: number 0-1
+      {{"name":"vhs"}} — no params
+      {{"name":"filmGrain", "amount": 0.15}} — amount: number 0-1 (default 0.15)
+      {{"name":"pulse", "scale": 1.08, "intervalMs": 500}} — scale: number, intervalMs: number
+      {{"name":"colorShift", "speed": 1.0}} — speed: number
+    Only include effects that genuinely enhance the clip's mood. Use 1-3 effects max.>],
     "colorAdjustments": {{
       "brightness": <number -1 to 1>,
       "saturation": <number 0 to 3>,
@@ -157,11 +174,13 @@ STRICT RULES:
 - virality_score MUST be an integer (not "9/10", not 9.5 — just the number 9)
 - virality_score criteria: 10 = guaranteed viral (national moment + universal participation), 7-9 = high potential, 4-6 = niche but engaged, 1-3 = low reach
 - filterPreset MUST be exactly one of the 6 allowed values above — no custom values
-- effects MUST only contain objects from the allowed 5 effect names
+- effects MUST only contain objects whose "name" is one of: fadeIn, fadeOut, zoom, shake, blur, glitch, vhs, filmGrain, pulse, colorShift
 - target_audience MUST only use values from the allowed 13 segments listed above
 - participation_difficulty MUST be exactly one of: "low", "medium", "high"
 - psychology_triggers MUST only use values from the allowed list
 - platform_fit MUST only use values from: "reels", "shorts", "whatsapp", "twitter"
+- music_suggestion.tempo MUST be exactly one of: "slow", "medium", "fast"
+- music_suggestion track and artist MUST be real, well-known songs — no made-up names
 - Return a JSON array sorted by virality_score descending
 - Select at most {max_count} events, fewer if not enough qualify
 - Return ONLY the JSON array, no markdown fences, no explanation
@@ -330,7 +349,7 @@ def get_trending(
         raise HTTPException(status_code=500, detail=f"Gemini error: {e}")
 
     VALID_FILTERS = {"none", "grayscale", "sepia", "highContrast", "coolTone", "warmTone"}
-    VALID_EFFECTS = {"fadeIn", "fadeOut", "zoom", "shake", "blur"}
+    VALID_EFFECTS = {"fadeIn", "fadeOut", "zoom", "shake", "blur", "glitch", "vhs", "filmGrain", "pulse", "colorShift"}
     VALID_TRIGGERS = {"FOMO", "social_proof", "competition", "status", "emotion", "belonging", "social_currency"}
     VALID_PLATFORMS = {"reels", "shorts", "whatsapp", "twitter"}
     VALID_AUDIENCES = {"gen_z", "millennials", "gen_x", "students", "couples", "singles", "parents", "families", "sports_fans", "foodies", "gamers", "creators", "professionals"}
@@ -443,6 +462,7 @@ def get_trending(
                 psychology_triggers=_sanitize_triggers(pick.get("psychology_triggers")),
                 growth_mechanic=pick.get("growth_mechanic") or None,
                 platform_fit=_sanitize_platforms(pick.get("platform_fit")),
+                music_suggestion=pick.get("music_suggestion") or None,
                 editing_suggestion=_sanitize_editing(pick.get("editing_suggestion")),
             ))
 

@@ -59,6 +59,7 @@ class TrendingEventOut(BaseModel):
     psychology_triggers: list[str] = []
     growth_mechanic: str | None = None
     platform_fit: list[str] = []
+    music_suggestion: dict | None = None
     editing_suggestion: dict | None = None
 
 

@@ -497,6 +497,16 @@ function renderTrending(events) {
                         <span class="field-label">growth_mechanic</span>
                         <span class="field-value">${escapeHtml(ev.growth_mechanic || "—")}</span>
                     </div>
+                    ${ev.music_suggestion ? `
+                    <div class="field-row">
+                        <span class="field-label">music_suggestion</span>
+                        <div class="field-value music-suggestion">
+                            <span class="music-track">${escapeHtml(ev.music_suggestion.track || "—")}</span>
+                            <span class="music-artist">by ${escapeHtml(ev.music_suggestion.artist || "—")}</span>
+                            <span class="music-tempo tempo-${ev.music_suggestion.tempo || 'medium'}">${escapeHtml(ev.music_suggestion.tempo || "—")}</span>
+                            <span class="music-vibe">${escapeHtml(ev.music_suggestion.vibe || "")}</span>
+                        </div>
+                    </div>` : ""}
 
                 </div>
                 ${ev.editing_suggestion ? renderEditingSuggestion(ev.editing_suggestion) : ""}
