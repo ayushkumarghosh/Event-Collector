@@ -129,7 +129,7 @@ OUTPUT FORMAT
 For EACH selected event, return EXACTLY this JSON structure:
 {{
   "index": <integer 0-based index from the event list>,
-  "trend_name": "<short catchy trend name e.g. '#IndiaCricketReaction', '#HoliTransition', '#ExamPOV'>",
+  "trend_name": "<short catchy trend name in normal Title Case, e.g. 'India Cricket Reaction', 'Holi Transition', 'Exam POV'. Do NOT use hashtags or camelCase.>",
   "trend_idea": "<1-2 sentence specific challenge/trend users can copy — must follow the HOOK → ACTION → SHARE formula>",
   "hook": "<short punchy caption for the clip — must grab attention in under 3 seconds>",
   "virality_score": <integer 1-10>,
